@@ -159,7 +159,7 @@ const maxTextUsers = 60
 
 // FormatTrafficText renders the report as Telegram HTML. It deliberately avoids
 // <pre>: monospace blocks wrap and misalign on mobile, whereas plain HTML lines
-// wrap gracefully. Status is shown with coloured dots (see statusEmoji).
+// wrap gracefully. Status is shown with colored dots (see statusEmoji).
 func FormatTrafficText(report TrafficReport, now time.Time) string {
 	if len(report.Users) == 0 {
 		return "📭 <b>No Users Found</b>\n\nThere are no users in the system yet."

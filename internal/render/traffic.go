@@ -32,12 +32,12 @@ const (
 	inbRowH    = 78 // per-inbound row
 	footerGapH = 20 // space above the total divider
 	footerH    = 92 // total block height
-	legendH    = 60 // colour legend at the very bottom
+	legendH    = 60 // color legend at the very bottom
 
 	dotRadius = 8
 	userBarH  = 7 // thin per-user bar
 
-	inbSwatch = 18 // side of the inbound colour swatch
+	inbSwatch = 18 // side of the inbound color swatch
 	inbBarH   = 12
 )
 
@@ -211,7 +211,7 @@ func drawLegend(dc *gg.Context, cy float64, fontLabel font.Face) {
 	const gapDotText = 16.0
 	const gapItems = 40.0
 
-	// Measure total width to centre the legend.
+	// Measure total width to center the legend.
 	total := 0.0
 	for i, it := range items {
 		w, _ := dc.MeasureString(it.label)
