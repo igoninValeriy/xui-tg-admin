@@ -18,12 +18,19 @@ func Load() (*Config, error) {
 	v.SetDefault("log_level", "info")
 
 	// Define environment variables
-	v.BindEnv("TG_TOKEN")
-	v.BindEnv("TG_ADMIN_IDS")
-	v.BindEnv("XRAY_USER")
-	v.BindEnv("XRAY_PASSWORD")
-	v.BindEnv("XRAY_API_URL")
-	v.BindEnv("XRAY_SUB_URL_PREFIX")
+	envKeys := []string{
+		"TG_TOKEN",
+		"TG_ADMIN_IDS",
+		"XRAY_USER",
+		"XRAY_PASSWORD",
+		"XRAY_API_URL",
+		"XRAY_SUB_URL_PREFIX",
+	}
+	for _, key := range envKeys {
+		if err := v.BindEnv(key); err != nil {
+			return nil, fmt.Errorf("failed to bind env %s: %w", key, err)
+		}
+	}
 
 	// Create config instance
 	cfg := &Config{

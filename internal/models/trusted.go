@@ -11,7 +11,6 @@ type TrustedUser struct {
 type VpnAccount struct {
 	ID        int    `json:"id"`
 	Username  string `json:"username"`
-	Password  string `json:"password"`
 	AddedBy   int64  `json:"added_by"`
 	CreatedAt int64  `json:"created_at"`
 }

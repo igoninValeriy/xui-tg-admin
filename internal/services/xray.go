@@ -55,28 +55,6 @@ func (s *XrayService) ResetUserTraffic(ctx context.Context, inboundID int, email
 	return s.client.ResetUserTraffic(ctx, inboundID, email)
 }
 
-// GetSubscriptionURL gets a user's subscription URL from the server
-func (s *XrayService) GetSubscriptionURL(ctx context.Context, email string) (string, error) {
-	return s.client.GetSubscriptionURL(ctx, email)
-}
-
-// GetAllMembers gets all members from the server
-func (s *XrayService) GetAllMembers(ctx context.Context) ([]string, error) {
-	inbounds, err := s.GetInbounds(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	var members []string
-	for _, inbound := range inbounds {
-		for _, clientStat := range inbound.ClientStats {
-			members = append(members, clientStat.Email)
-		}
-	}
-
-	return members, nil
-}
-
 // GetAllMembersWithInfo получает детальную информацию о всех пользователях с поддержкой сортировки
 func (s *XrayService) GetAllMembersWithInfo(ctx context.Context, sortType models.SortType) ([]models.MemberInfo, error) {
 	inbounds, err := s.GetInbounds(ctx)

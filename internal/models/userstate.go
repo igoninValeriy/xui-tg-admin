@@ -24,8 +24,6 @@ const (
 
 // UserState represents the state of a user's conversation
 type UserState struct {
-	State      ConversationState
-	Payload    *string
-	SortType   *SortType // Хранит выбранный тип сортировки
-	ActionType *string   // Хранит тип действия (edit/delete)
+	State   ConversationState
+	Payload *string
 }

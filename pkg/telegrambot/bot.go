@@ -24,6 +24,10 @@ type Bot struct {
 	storageService *services.StorageService
 	permCtrl       *permissions.PermissionController
 	logger         *logrus.Logger
+	// ctx is the application-lifetime context propagated to downstream calls.
+	// telebot provides no per-update context, so we carry the cancellable root
+	// context here to allow in-flight X-UI requests to be canceled on shutdown.
+	ctx context.Context
 }
 
 // NewBot creates a new Telegram bot
@@ -82,6 +86,9 @@ func NewBot(
 func (b *Bot) Start(ctx context.Context) error {
 	b.logger.Info("Starting Telegram bot")
 
+	// Carry the cancellable root context for downstream handler calls
+	b.ctx = ctx
+
 	// Setup context for graceful shutdown
 	go func() {
 		<-ctx.Done()
@@ -134,8 +141,12 @@ func (b *Bot) handleUpdate(c telebot.Context) error {
 		return c.Send("You don't have permission to use this bot.")
 	}
 
-	// Handle the update
-	ctx := context.Background()
+	// Handle the update using the application context (falls back to Background
+	// if the bot has not been started through Start).
+	ctx := b.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return handler.Handle(ctx, c)
 }
 

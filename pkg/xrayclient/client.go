@@ -450,12 +450,3 @@ func (c *Client) ResetUserTraffic(ctx context.Context, inboundID int, email stri
 
 	return nil
 }
-
-// GetSubscriptionURL gets a user's subscription URL
-func (c *Client) GetSubscriptionURL(ctx context.Context, email string) (string, error) {
-	if c.serverConfig.SubURLPrefix == "" {
-		return "", errors.New("subscription URL prefix not configured for this server")
-	}
-
-	return fmt.Sprintf("%s/sub/%s", c.serverConfig.SubURLPrefix, email), nil
-}

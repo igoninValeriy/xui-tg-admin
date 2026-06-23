@@ -62,24 +62,6 @@ func (s *StorageService) Load() error {
 	return json.Unmarshal(data, s.data)
 }
 
-// Save writes data to JSON file atomically
-func (s *StorageService) Save() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	data, err := json.MarshalIndent(s.data, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	tmpFile := s.filename + ".tmp"
-	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
-		return err
-	}
-
-	return os.Rename(tmpFile, s.filename)
-}
-
 // IsTrusted checks if a user is in the trusted list
 func (s *StorageService) IsTrusted(telegramID int64) bool {
 	s.mu.RLock()
@@ -180,14 +162,13 @@ func (s *StorageService) GetUserAccountCount(telegramID int64) int {
 }
 
 // AddVpnAccount adds a new VPN account
-func (s *StorageService) AddVpnAccount(username, password string, addedBy int64) error {
+func (s *StorageService) AddVpnAccount(username string, addedBy int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.data.VpnAccounts = append(s.data.VpnAccounts, models.VpnAccount{
 		ID:        s.data.NextID,
 		Username:  username,
-		Password:  password,
 		AddedBy:   addedBy,
 		CreatedAt: time.Now().Unix(),
 	})

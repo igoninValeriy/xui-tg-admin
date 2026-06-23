@@ -37,10 +37,8 @@ func (s *UserStateService) GetState(userID int64) (*models.UserState, error) {
 
 	// Return default state if not found
 	return &models.UserState{
-		State:      models.Default,
-		Payload:    nil,
-		SortType:   nil,
-		ActionType: nil,
+		State:   models.Default,
+		Payload: nil,
 	}, nil
 }
 
@@ -80,35 +78,4 @@ func (s *UserStateService) WithPayload(userID int64, payload string) error {
 
 	state.Payload = &payload
 	return s.SetState(userID, *state)
-}
-
-// WithSortType updates a user's sort type
-func (s *UserStateService) WithSortType(userID int64, sortType models.SortType) error {
-	state, err := s.GetState(userID)
-	if err != nil {
-		return err
-	}
-
-	state.SortType = &sortType
-	return s.SetState(userID, *state)
-}
-
-// WithActionType updates a user's action type
-func (s *UserStateService) WithActionType(userID int64, actionType string) error {
-	state, err := s.GetState(userID)
-	if err != nil {
-		return err
-	}
-
-	state.ActionType = &actionType
-	return s.SetState(userID, *state)
-}
-
-// GetSortType gets the user's sort type or returns default
-func (s *UserStateService) GetSortType(userID int64) models.SortType {
-	state, err := s.GetState(userID)
-	if err != nil || state.SortType == nil {
-		return models.SortByCreationOrder // По умолчанию
-	}
-	return *state.SortType
 }

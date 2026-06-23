@@ -29,12 +29,12 @@ func ValidateDuration(durationStr string) (int, error) {
 		return 0, fmt.Errorf("invalid duration format: must be a number")
 	}
 
-	if days < 1 {
-		return 0, fmt.Errorf("duration must be at least 1 day")
+	if days < constants.MinDurationDays {
+		return 0, fmt.Errorf("duration must be at least %d day", constants.MinDurationDays)
 	}
 
-	if days > 3650 { // 10 years max
-		return 0, fmt.Errorf("duration cannot exceed 3650 days")
+	if days > constants.MaxDurationDays {
+		return 0, fmt.Errorf("duration cannot exceed %d days", constants.MaxDurationDays)
 	}
 
 	return days, nil

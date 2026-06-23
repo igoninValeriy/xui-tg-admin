@@ -10,6 +10,7 @@ import (
 	telebot "gopkg.in/telebot.v3"
 
 	"xui-tg-admin/internal/commands"
+	"xui-tg-admin/internal/constants"
 	"xui-tg-admin/internal/helpers"
 	"xui-tg-admin/internal/models"
 	"xui-tg-admin/internal/permissions"
@@ -20,7 +21,7 @@ import (
 type TrustedHandler struct {
 	BaseHandler
 	storageService  *services.StorageService
-	commandHandlers map[string]func(telebot.Context) error
+	commandHandlers map[string]func(context.Context, telebot.Context) error
 }
 
 // NewTrustedHandler creates a new trusted handler
@@ -51,8 +52,8 @@ func (h *TrustedHandler) Handle(ctx context.Context, c telebot.Context) error {
 
 	// Check account limit before any operation
 	accountCount := h.storageService.GetUserAccountCount(userID)
-	if accountCount >= 3 && c.Text() == "➕ "+commands.AddMember {
-		return c.Send("You can create maximum 3 accounts.")
+	if accountCount >= constants.MaxTrustedAccounts && c.Text() == "➕ "+commands.AddMember {
+		return c.Send(fmt.Sprintf("You can create maximum %d accounts.", constants.MaxTrustedAccounts))
 	}
 
 	// Get user state
@@ -65,18 +66,18 @@ func (h *TrustedHandler) Handle(ctx context.Context, c telebot.Context) error {
 	// Handle based on state
 	switch userState.State {
 	case models.Default:
-		return h.handleDefaultState(c)
+		return h.handleDefaultState(ctx, c)
 	case models.AwaitConfirmMemberDeletion:
-		return h.processConfirmDeletion(c)
+		return h.processConfirmDeletion(ctx, c)
 	default:
 		h.logger.Warnf("Unknown state: %d", userState.State)
-		return h.handleDefaultState(c)
+		return h.handleDefaultState(ctx, c)
 	}
 }
 
 // initializeCommands initializes the command handlers
 func (h *TrustedHandler) initializeCommands() {
-	h.commandHandlers = map[string]func(telebot.Context) error{
+	h.commandHandlers = map[string]func(context.Context, telebot.Context) error{
 		commands.Start:            h.handleStart,
 		commands.AddMember:        h.handleAddMember,
 		commands.DeleteMember:     h.handleDeleteMember,
@@ -112,23 +113,25 @@ func (h *TrustedHandler) getButtonCommand(text string) string {
 }
 
 // handleDefaultState handles the default state
-func (h *TrustedHandler) handleDefaultState(c telebot.Context) error {
+func (h *TrustedHandler) handleDefaultState(ctx context.Context, c telebot.Context) error {
 	text := c.Text()
 	command := h.getButtonCommand(text)
 
 	// Check if we have a command handler for this command
 	if handler, ok := h.commandHandlers[command]; ok {
-		return handler(c)
+		return handler(ctx, c)
 	}
 
 	// If not, show the main menu
-	return h.handleStart(c)
+	return h.handleStart(ctx, c)
 }
 
 // handleStart handles the start command
-func (h *TrustedHandler) handleStart(c telebot.Context) error {
+func (h *TrustedHandler) handleStart(ctx context.Context, c telebot.Context) error {
 	// Clear state
-	h.stateService.WithConversationState(c.Sender().ID, models.Default)
+	if err := h.stateService.WithConversationState(c.Sender().ID, models.Default); err != nil {
+		h.logger.Errorf("Failed to clear user state: %v", err)
+	}
 
 	// Determine the message based on command
 	var message string
@@ -144,13 +147,13 @@ func (h *TrustedHandler) handleStart(c telebot.Context) error {
 }
 
 // handleAddMember handles adding a new member (VPN account)
-func (h *TrustedHandler) handleAddMember(c telebot.Context) error {
+func (h *TrustedHandler) handleAddMember(ctx context.Context, c telebot.Context) error {
 	userID := c.Sender().ID
 
 	// Check account limit
 	accountCount := h.storageService.GetUserAccountCount(userID)
-	if accountCount >= 3 {
-		return c.Send("You can create maximum 3 accounts.")
+	if accountCount >= constants.MaxTrustedAccounts {
+		return c.Send(fmt.Sprintf("You can create maximum %d accounts.", constants.MaxTrustedAccounts))
 	}
 
 	// Get user's Telegram username
@@ -163,40 +166,41 @@ func (h *TrustedHandler) handleAddMember(c telebot.Context) error {
 	autoUsername := fmt.Sprintf("%s-add%d", username, accountCount+1)
 
 	// Send loading message
-	loadingMsg := fmt.Sprintf("Creating account '%s'...", autoUsername)
-	c.Send(loadingMsg)
+	if err := h.sendTextMessage(c, fmt.Sprintf("Creating account '%s'...", autoUsername), nil); err != nil {
+		h.logger.Errorf("Failed to send loading message: %v", err)
+	}
 
 	// Create clients for all inbounds with infinite duration
 	params := TrustedClientCreationParams{
 		Username:    autoUsername,
 		ExpiryTime:  0, // Infinite duration
 		SenderID:    userID,
-		CommonSubId: generateSubID(autoUsername),
+		CommonSubId: models.GenerateSubID(),
 	}
 
-	success, errors := h.createClientsForAllInbounds(params)
+	success, createErrors := h.createClientsForAllInbounds(ctx, params)
 
 	// Store VPN account in our storage
 	if success {
-		if err := h.storageService.AddVpnAccount(autoUsername, "auto-generated", userID); err != nil {
+		if err := h.storageService.AddVpnAccount(autoUsername, userID); err != nil {
 			h.logger.Errorf("Failed to store VPN account: %v", err)
+		}
+		if err := h.sendSubscriptionInfo(ctx, c, params); err != nil {
+			h.logger.Errorf("Failed to send subscription info: %v", err)
+		}
+	} else {
+		errorMsg := "Failed to create account:\n" + strings.Join(createErrors, "\n")
+		if err := h.sendTextMessage(c, errorMsg, nil); err != nil {
+			h.logger.Errorf("Failed to send error message: %v", err)
 		}
 	}
 
-	// Send result
-	if success {
-		h.sendSubscriptionInfo(c, params)
-	} else {
-		errorMsg := "Failed to create account:\n" + strings.Join(errors, "\n")
-		c.Send(errorMsg)
-	}
-
 	// Return to main menu
-	return h.handleStart(c)
+	return h.handleStart(ctx, c)
 }
 
 // handleDeleteMember handles showing user's accounts for deletion
-func (h *TrustedHandler) handleDeleteMember(c telebot.Context) error {
+func (h *TrustedHandler) handleDeleteMember(ctx context.Context, c telebot.Context) error {
 	userID := c.Sender().ID
 	accounts := h.storageService.GetUserAccounts(userID)
 
@@ -244,42 +248,45 @@ func (h *TrustedHandler) handleConfirmRemoveVpnAccount(ctx context.Context, c te
 
 	// Store account ID in state for confirmation
 	accountIDStr := fmt.Sprintf("%d", accountID)
-	h.stateService.WithPayload(userID, accountIDStr)
-	h.stateService.WithConversationState(userID, models.AwaitConfirmMemberDeletion)
+	if err := h.stateService.WithPayload(userID, accountIDStr); err != nil {
+		h.logger.Errorf("Failed to set payload: %v", err)
+		return err
+	}
+	if err := h.stateService.WithConversationState(userID, models.AwaitConfirmMemberDeletion); err != nil {
+		h.logger.Errorf("Failed to set state: %v", err)
+		return err
+	}
 
 	// Show confirmation keyboard
 	markup := h.createConfirmKeyboard()
-	return c.Send(fmt.Sprintf("🗑️ **Confirm Account Deletion**\n\n⚠️ You are about to permanently delete account **%s**\n\n**This action will:**\n• Remove account from all server configurations\n• Delete all associated data\n• Cannot be undone\n\nAre you absolutely sure?", accountToDelete.Username), &telebot.SendOptions{
-		ParseMode:   telebot.ModeMarkdown,
-		ReplyMarkup: markup,
-	})
+	return h.sendTextMessage(c, fmt.Sprintf("🗑️ <b>Confirm Account Deletion</b>\n\n⚠️ You are about to permanently delete account <b>%s</b>\n\n<b>This action will:</b>\n• Remove account from all server configurations\n• Delete all associated data\n• Cannot be undone\n\nAre you absolutely sure?", accountToDelete.Username), markup)
 }
 
 // processConfirmDeletion processes the deletion confirmation
-func (h *TrustedHandler) processConfirmDeletion(c telebot.Context) error {
+func (h *TrustedHandler) processConfirmDeletion(ctx context.Context, c telebot.Context) error {
 	userID := c.Sender().ID
 	confirmation := c.Text()
 
 	// Check for return to main menu
 	if h.getButtonCommand(confirmation) == commands.ReturnToMainMenu {
-		return h.handleStart(c)
+		return h.handleStart(ctx, c)
 	}
 
 	// Check if user confirmed
 	if h.getButtonCommand(confirmation) != commands.Confirm {
-		return c.Send("❌ **Invalid Selection**\n\nPlease click Confirm to proceed with deletion or use the Return button to cancel.")
+		return h.sendTextMessage(c, "❌ <b>Invalid Selection</b>\n\nPlease click Confirm to proceed with deletion or use the Return button to cancel.", nil)
 	}
 
 	// Get account ID from state
 	userState, err := h.stateService.GetState(userID)
 	if err != nil || userState.Payload == nil {
-		return c.Send("❌ **Session Error**\n\nAccount data was lost. Please start the deletion process again.")
+		return h.sendTextMessage(c, "❌ <b>Session Error</b>\n\nAccount data was lost. Please start the deletion process again.", nil)
 	}
 
 	accountIDStr := *userState.Payload
 	accountID, err := strconv.Atoi(accountIDStr)
 	if err != nil {
-		return c.Send("❌ **Invalid Account ID**\n\nPlease start the deletion process again.")
+		return h.sendTextMessage(c, "❌ <b>Invalid Account ID</b>\n\nPlease start the deletion process again.", nil)
 	}
 
 	// Get the account details before deletion
@@ -293,34 +300,37 @@ func (h *TrustedHandler) processConfirmDeletion(c telebot.Context) error {
 	}
 
 	if accountToDelete == nil {
-		return c.Send("❌ **Account Not Found**\n\nThe account may have already been deleted.")
+		return h.sendTextMessage(c, "❌ <b>Account Not Found</b>\n\nThe account may have already been deleted.", nil)
 	}
 
 	// Send loading message
-	loadingMsg := fmt.Sprintf("⏳ **Deleting Account...**\n\nRemoving account '%s' from all server configurations. Please wait...", accountToDelete.Username)
-	c.Send(loadingMsg)
+	if err := h.sendTextMessage(c, fmt.Sprintf("⏳ <b>Deleting Account...</b>\n\nRemoving account '%s' from all server configurations. Please wait...", accountToDelete.Username), nil); err != nil {
+		h.logger.Errorf("Failed to send loading message: %v", err)
+	}
 
 	// First, remove clients from X-Ray server (like admin does)
-	ctx := context.Background()
-	err = h.xrayService.RemoveClients(ctx, []string{accountToDelete.Username})
-	if err != nil {
+	if err := h.xrayService.RemoveClients(ctx, []string{accountToDelete.Username}); err != nil {
 		h.logger.Errorf("Failed to remove clients from X-Ray server: %v", err)
-		// Clear state and return to main menu
-		h.stateService.WithConversationState(userID, models.Default)
-		return c.Send(fmt.Sprintf("❌ **Deletion Failed**\n\nCouldn't delete account '%s' from server configurations.\n\n**Error:** %v\n\nPlease try again or contact administrator.", accountToDelete.Username, err))
+		h.clearState(userID)
+		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>Deletion Failed</b>\n\nCouldn't delete account '%s' from server configurations.\n\n<b>Error:</b> %v\n\nPlease try again or contact administrator.", accountToDelete.Username, err), nil)
 	}
 
 	// Then remove from our database
 	if err := h.storageService.RemoveVpnAccount(accountID, userID); err != nil {
 		h.logger.Errorf("Failed to remove VPN account from storage: %v", err)
-		// Clear state and return to main menu
-		h.stateService.WithConversationState(userID, models.Default)
-		return c.Send(fmt.Sprintf("⚠️ **Partial Success**\n\nAccount deleted from server but failed to update database:\n%v", err))
+		h.clearState(userID)
+		return h.sendTextMessage(c, fmt.Sprintf("⚠️ <b>Partial Success</b>\n\nAccount deleted from server but failed to update database:\n%v", err), nil)
 	}
 
-	// Clear state and return to main menu
-	h.stateService.WithConversationState(userID, models.Default)
-	return c.Send(fmt.Sprintf("✅ **Account Deleted Successfully**\n\n🗑️ Account '%s' has been permanently removed from all server configurations.", accountToDelete.Username))
+	h.clearState(userID)
+	return h.sendTextMessage(c, fmt.Sprintf("✅ <b>Account Deleted Successfully</b>\n\n🗑️ Account '%s' has been permanently removed from all server configurations.", accountToDelete.Username), nil)
+}
+
+// clearState resets the user's conversation state, logging any failure
+func (h *TrustedHandler) clearState(userID int64) {
+	if err := h.stateService.WithConversationState(userID, models.Default); err != nil {
+		h.logger.Errorf("Failed to clear user state: %v", err)
+	}
 }
 
 // createRemoveAccountKeyboard creates keyboard for removing accounts
@@ -358,15 +368,8 @@ type TrustedClientCreationParams struct {
 	CommonSubId string
 }
 
-// generateSubID generates a subscription ID for the user
-func generateSubID(username string) string {
-	return models.GenerateSubID()
-}
-
 // createClientsForAllInbounds creates clients for all enabled inbounds (simplified version)
-func (h *TrustedHandler) createClientsForAllInbounds(params TrustedClientCreationParams) (bool, []string) {
-	ctx := context.Background()
-
+func (h *TrustedHandler) createClientsForAllInbounds(ctx context.Context, params TrustedClientCreationParams) (bool, []string) {
 	// Get enabled inbounds
 	inbounds, err := h.xrayService.GetInbounds(ctx)
 	if err != nil {
@@ -439,7 +442,7 @@ func (h *TrustedHandler) createClientsForAllInboundsAdmin(ctx context.Context, p
 }
 
 // sendSubscriptionInfo sends subscription information to the user using admin format
-func (h *TrustedHandler) sendSubscriptionInfo(c telebot.Context, params TrustedClientCreationParams) error {
+func (h *TrustedHandler) sendSubscriptionInfo(ctx context.Context, c telebot.Context, params TrustedClientCreationParams) error {
 	// Create admin-compatible params
 	adminParams := ClientCreationParams{
 		BaseUsername:    params.Username,
@@ -451,7 +454,6 @@ func (h *TrustedHandler) sendSubscriptionInfo(c telebot.Context, params TrustedC
 	}
 
 	// Get created emails (we need this for the helper function)
-	ctx := context.Background()
 	inbounds, err := h.xrayService.GetInbounds(ctx)
 	if err != nil {
 		return err
@@ -493,22 +495,4 @@ func (h *TrustedHandler) sendSubscriptionInfo(c telebot.Context, params TrustedC
 	}
 
 	return nil
-}
-
-// createConfirmKeyboard creates a keyboard for confirmation
-func (h *TrustedHandler) createConfirmKeyboard() *telebot.ReplyMarkup {
-	markup := &telebot.ReplyMarkup{
-		ResizeKeyboard: true,
-	}
-
-	markup.Reply(
-		telebot.Row{
-			telebot.Btn{Text: "✅ " + commands.Confirm},
-		},
-		telebot.Row{
-			telebot.Btn{Text: "↩️ " + commands.ReturnToMainMenu},
-		},
-	)
-
-	return markup
 }

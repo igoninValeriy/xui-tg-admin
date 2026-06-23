@@ -32,7 +32,10 @@ func (h *AdminTrustedHandler) HandleAddTrustedRequest(ctx context.Context, c tel
 	state := models.UserState{
 		State: models.StateAwaitingTrustedUsername,
 	}
-	h.stateService.SetState(c.Sender().ID, state)
+	if err := h.stateService.SetState(c.Sender().ID, state); err != nil {
+		h.logger.Errorf("Failed to set state: %v", err)
+		return err
+	}
 
 	msg := "Send @username to add to trusted list:"
 	return c.Send(msg)
@@ -79,7 +82,10 @@ func (h *AdminTrustedHandler) HandleTrustedUsernameInput(ctx context.Context, c 
 	state := models.UserState{
 		State: models.Default,
 	}
-	h.stateService.SetState(c.Sender().ID, state)
+	if err := h.stateService.SetState(c.Sender().ID, state); err != nil {
+		h.logger.Errorf("Failed to set state: %v", err)
+		return err
+	}
 	return c.Send(fmt.Sprintf("@%s added to trusted list.", username))
 }
 

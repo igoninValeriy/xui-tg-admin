@@ -30,24 +30,6 @@ type MemberInfo struct {
 	IsExpired    bool     // Истек ли срок действия
 }
 
-// GetSortName возвращает читаемое название типа сортировки
-func (st SortType) GetSortName() string {
-	switch st {
-	case SortByCreationOrder:
-		return "📅 По дате добавления"
-	case SortByExpiryDate:
-		return "⏰ По дате истечения"
-	case SortByTrafficTotal:
-		return "📊 По общему трафику"
-	case SortByStatus:
-		return "🔄 По статусу"
-	case SortByName:
-		return "🔤 По имени"
-	default:
-		return "📅 По дате добавления"
-	}
-}
-
 // IsExpiredMember проверяет, истек ли срок действия пользователя
 func (m *MemberInfo) IsExpiredMember() bool {
 	if m.ExpiryTime == 0 {

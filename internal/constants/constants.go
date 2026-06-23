@@ -13,6 +13,11 @@ const (
 
 	// Duration constants
 	MillisecondsInDay = 24 * 60 * 60 * 1000
+	MinDurationDays   = 1
+	MaxDurationDays   = 3650 // 10 years
+
+	// Trusted user constants
+	MaxTrustedAccounts = 3
 
 	// Network constants
 	DefaultTimeout          = 30

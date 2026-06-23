@@ -154,14 +154,20 @@ func (h *BaseHandler) createReturnKeyboard() *telebot.ReplyMarkup {
 	return markup
 }
 
-// HandleSelectServer handles server selection
-func (h *BaseHandler) HandleSelectServer(c telebot.Context) error {
-	// Since we have a single server configuration, just show a message
-	return h.sendTextMessage(c, "Server configuration is handled automatically.", h.createReturnKeyboard())
-}
+// createConfirmKeyboard creates a keyboard for confirmation (Confirm / Return)
+func (h *BaseHandler) createConfirmKeyboard() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{
+		ResizeKeyboard: true,
+	}
 
-// validateServerSelection validates that a server is selected
-func (h *BaseHandler) validateServerSelection(userID int64) error {
-	// Since we have a single server configuration, always return nil
-	return nil
+	markup.Reply(
+		telebot.Row{
+			telebot.Btn{Text: "✅ " + commands.Confirm},
+		},
+		telebot.Row{
+			telebot.Btn{Text: "↩️ " + commands.ReturnToMainMenu},
+		},
+	)
+
+	return markup
 }
