@@ -1,293 +1,147 @@
-# 🤖 Claude AI Agent Guide - X-UI Telegram Admin Bot
+# 🤖 Claude AI Agent Guide — X-UI Telegram Admin Bot
 
 ## 📋 Project Overview
 
-**X-UI Telegram Admin Bot** is a Go application for managing X-UI panel through a Telegram bot with role-based access system.
+**X-UI Telegram Admin Bot** is a Go application that manages an X-UI (3x-ui) VPN
+panel through a Telegram bot with a role-based access system.
 
-### 🎯 Main Purpose
-Automation of VPN server management through a convenient Telegram interface with role support (Admin/User/Demo).
+### 🎯 Purpose
+Automate VPN user management from Telegram: admins create/delete users, monitor
+traffic and online status; trusted users self-serve a small number of accounts.
 
 ---
 
-## 🏗️ Project Architecture
+## 🏗️ Architecture
 
-### 📁 Directory Structure
+Flow: **Telegram update → permission check → handler (by role) → services → X-UI HTTP client**.
+
+I/O lives at the edges (`pkg/telegrambot`, `pkg/xrayclient`, `services`), and the
+cancellable request `context.Context` is threaded from `Bot.Start` all the way down
+to the X-UI HTTP calls (no `context.Background()` inside handlers).
 
 ```
 xui-tg-admin/
-├── cmd/bot/                    # Application entry point
-│   └── main.go                # Main file with initialization
-├── internal/                   # Internal application logic
-│   ├── commands/              # Telegram command constants
-│   ├── config/                # Configuration management
-│   ├── constants/             # Application constants
-│   ├── errors/                # Custom error types
-│   ├── handlers/              # Telegram message handlers
-│   │   ├── admin.go           # Administrator logic
-│   │   ├── admin_client_operations.go # Client operations
-│   │   ├── base.go            # Base handler
-│   │   ├── demo.go            # Demo mode
-│   │   ├── factory.go         # Handler factory
-│   │   └── member.go          # User logic
-│   ├── helpers/               # Helper functions
-│   │   ├── grouping.go        # Data grouping
-│   │   ├── subscription.go    # Subscription handling
-│   │   └── traffic.go         # Traffic formatting
-│   ├── models/                # Data models
-│   │   ├── client.go          # Client model
-│   │   ├── inbound.go         # Inbound model
-│   │   └── userstate.go       # User state
-│   ├── permissions/           # Access control system
-│   │   └── controller.go      # Permission controller
-│   ├── services/              # Business logic
-│   │   ├── qr.go              # QR code generation
-│   │   ├── userstate.go       # State management
-│   │   ├── validator.go       # Data validation
-│   │   └── xray.go            # X-UI service
-│   └── validation/            # Validation
-│       └── validation.go      # Validation rules
-├── pkg/                       # Reusable packages
-│   ├── telegrambot/           # Telegram bot
-│   │   └── bot.go             # Main bot
-│   └── xrayclient/            # X-UI API client
-│       └── client.go          # HTTP client for X-UI
-└── Configuration files
-    ├── config.example.env     # Configuration example
-    ├── docker-compose.yml     # Docker Compose
-    └── Dockerfile             # Docker image
+├── cmd/bot/main.go              # Entry point: config, services, signal-based shutdown
+├── internal/
+│   ├── commands/                # Telegram command/button string constants
+│   ├── config/                  # Env-based configuration loading & validation
+│   ├── constants/               # Numeric/format constants (limits, timeouts, …)
+│   ├── handlers/                # Telegram message handlers
+│   │   ├── base.go              # BaseHandler: shared send/keyboard helpers
+│   │   ├── factory.go           # Builds a handler for a given access type
+│   │   ├── admin.go             # AdminHandler: dispatch, /start, trusted delegation
+│   │   ├── admin_members.go     # Admin: user create / edit / delete flows
+│   │   ├── admin_traffic.go     # Admin: online list, usage reports, traffic resets
+│   │   ├── admin_client_operations.go # Admin: client creation across inbounds
+│   │   ├── admin_trusted.go     # Admin: grant/revoke trusted users
+│   │   └── trusted.go           # TrustedHandler: self-service VPN accounts
+│   ├── helpers/                 # Pure helpers: username, traffic, subscription formatting
+│   ├── models/                  # Data models (Client, Inbound, MemberInfo, state, trusted)
+│   ├── permissions/             # Access control (Admin / Trusted / None)
+│   ├── services/                # XrayService, UserStateService, QRService, StorageService
+│   └── validation/              # Username/duration validation
+└── pkg/
+    ├── telegrambot/bot.go       # Bot wiring, middleware, update routing
+    └── xrayclient/client.go     # HTTP client for the X-UI API
 ```
 
 ---
 
-## 🔧 Key Components
+## 🔐 Roles & Permissions (`internal/permissions`)
 
-### 1. **Handler System (handlers/)**
+Three access types — **no Demo/User roles exist**:
 
-#### `admin.go` - Main administrator logic
-- **States**: `AwaitingInputUserName`, `AwaitingDuration`, `AwaitSelectUserName`, `AwaitMemberAction`, `AwaitConfirmMemberDeletion`, `AwaitConfirmResetUsersNetworkUsage`
-- **Main methods**:
-  - `handleStart()` - Main menu
-  - `handleAddMember()` - Add user
-  - `handleEditMember()` - Edit user
-  - `handleDeleteMember()` - Delete user
-  - `handleViewConfig()` - View configuration
-  - `handleResetTraffic()` - Reset traffic
-  - `processConfirmDeletion()` - Deletion confirmation
+- **`Admin`** — Telegram IDs listed in `TG_ADMIN_IDS`. Full access.
+- **`Trusted`** — users stored in `data.json` (added by an admin via `Add Trusted`).
+  May create up to `constants.MaxTrustedAccounts` (3) of their own VPN accounts.
+- **`None`** — everyone else; the bot refuses to serve them.
 
-#### `admin_client_operations.go` - Client operations
-- **Main methods**:
-  - `createClientsForAllInbounds()` - Create clients in all inbounds
-  - `sendSubscriptionInfo()` - Send subscription information
-  - `findClientInInbounds()` - Find client in inbounds
-
-#### `base.go` - Base handler
-- **Common methods**:
-  - `createMainKeyboard()` - Create main keyboard
-  - `createReturnKeyboard()` - Return keyboard
-  - `createConfirmKeyboard()` - Confirmation keyboard
-  - `sendTextMessage()` - Send text message
-  - `sendQRCode()` - Send QR code
-
-### 2. **X-UI API Client (pkg/xrayclient/)**
-
-#### `client.go` - HTTP client for X-UI
-- **Main methods**:
-  - `Login()` - Authentication
-  - `GetInbounds()` - Get inbounds
-  - `AddClientToInbound()` - Add client
-  - `RemoveClients()` - Remove clients
-  - `ResetUserTraffic()` - Reset traffic
-  - `GetOnlineUsers()` - Get online users
-
-### 3. **Data Models (internal/models/)**
-
-#### `client.go` - Client model
-```go
-type Client struct {
-    ID          string  `json:"id"`
-    Enable      bool    `json:"enable"`
-    Email       string  `json:"email"`
-    TotalGB     int     `json:"totalGB"`
-    LimitIP     int     `json:"limitIp"`
-    ExpiryTime  *int64  `json:"expiryTime,omitempty"`
-    Fingerprint string  `json:"fingerprint"`
-    TgID        string  `json:"tgId"`
-    SubID       string  `json:"subId"`
-}
-```
-
-#### `inbound.go` - Inbound model
-```go
-type Inbound struct {
-    ID          int          `json:"id"`
-    Up          int64        `json:"up"`
-    Down        int64        `json:"down"`
-    Total       int64        `json:"total"`
-    Remark      string       `json:"remark"`
-    Enable      bool         `json:"enable"`
-    ExpiryTime  int64        `json:"expiryTime"`
-    ClientStats []ClientStat `json:"clientStats"`
-    Settings    string       `json:"settings"`
-}
-```
-
-### 4. **Permission System (internal/permissions/)**
-
-#### `controller.go` - Permission controller
-- **Roles**: `Admin`, `Member`, `Demo`
-- **Methods**:
-  - `GetAccessType()` - Determine access type
-  - `IsAdmin()` - Check if admin
+`PermissionController.GetAccessType(userID)` resolves the role. Trusted users are
+first added by `@username` (with a pseudo Telegram ID derived from the username
+hash) and reconciled to their real Telegram ID on their first message
+(`Bot.checkAndUpdateTrustedUser`).
 
 ---
 
-## 🔄 Workflows
+## 🧭 Handlers & State
 
-### 1. **User Creation**
-```
-Add Member → Enter name → Validation → Choose duration → Create in inbounds → Send QR code
-```
+`HandlerFactory.CreateHandler(accessType)` returns the right handler. Each handler
+embeds `BaseHandler` and dispatches on the user's `ConversationState`.
 
-### 2. **User Management**
-```
-Edit Member → Select user → Action menu → Execute action → Result
-```
+Command/button handlers are stored in a
+`map[string]func(context.Context, telebot.Context) error`; button text is mapped to a
+command by `getButtonCommand` (strips the emoji prefix).
 
-### 3. **User Deletion**
-```
-Delete → Select user → Confirmation → Delete from all inbounds → Result
-```
+`ConversationState` values (`internal/models/userstate.go`):
+`Default`, `AwaitingInputUserName`, `AwaitingDuration`, `AwaitSelectUserName`,
+`AwaitMemberAction`, `AwaitConfirmMemberDeletion`,
+`AwaitConfirmResetUsersNetworkUsage`, `StateAwaitingTrustedUsername`.
 
-### 4. **Traffic Reset**
-```
-Reset Traffic → Select user → Reset in all inbounds → Result
-```
+State is stored in-memory in `UserStateService` (a `go-cache` with a 30-minute TTL).
 
 ---
 
-## 🎮 User Interface
+## 🗄️ Storage (`internal/services/storage.go`)
 
-### Keyboards
-
-#### Administrator main menu
-```
-┌─────────────────────────┐
-│  👤 Add Member  │ 📊 Online │
-│  ✏️ Edit Member │ 📈 Detailed│
-│  🔄 Reset Network Usage │
-└─────────────────────────┘
-```
-
-#### User action menu
-```
-┌─────────────────────────┐
-│  🔗 View Config         │
-│  🔄 Reset │ 🗑️ Delete   │
-│  ↩️ Return to Main Menu │
-└─────────────────────────┘
-```
-
-### User States
-- `Default` - Default state
-- `AwaitingInputUserName` - Waiting for username input
-- `AwaitingDuration` - Waiting for duration input
-- `AwaitSelectUserName` - Waiting for user selection
-- `AwaitMemberAction` - Waiting for user action
-- `AwaitConfirmMemberDeletion` - Waiting for deletion confirmation
-- `AwaitConfirmResetUsersNetworkUsage` - Waiting for traffic reset confirmation
+`StorageService` persists trusted users and their VPN accounts to a JSON file
+(`data.json` by default), written atomically (temp file + rename) and guarded by a
+`sync.RWMutex`. It holds `TrustedUser` and `VpnAccount` records.
 
 ---
 
-## 🔧 API Integration
+## 🔧 X-UI API (`pkg/xrayclient`)
 
-### X-UI API Endpoints
-- `POST /login` - Authentication
-- `GET /xui/API/inbounds` - Get inbounds
-- `POST /xui/API/inbounds/addClient` - Add client
-- `POST /xui/API/inbounds/{inboundId}/delClient/{clientUuid}` - Delete client
-- `POST /xui/API/inbounds/{inboundId}/resetClientTraffic/{clientEmail}` - Reset traffic
-- `POST /xui/API/inbounds/onlines` - Get online users
+`XRAY_API_URL` is the panel **base URL** (no `/api` suffix). The client calls:
 
-### Data Format
-- **Clients**: Created with suffixes (`username-1`, `username-2`, etc.)
-- **SubID**: Common for all clients of one user
-- **Traffic**: Unlimited (TotalGB: 0)
-- **Expiration**: Unix timestamp in milliseconds
+- `POST {base}/login` — authenticate (session cookie is cached)
+- `GET  {base}/xui/API/inbounds` — list inbounds
+- `POST {base}/xui/API/inbounds/addClient`
+- `POST {base}/xui/API/inbounds/{id}/delClient/{uuid}`
+- `POST {base}/xui/API/inbounds/{id}/resetClientTraffic/{email}`
+- `POST {base}/xui/API/inbounds/onlines`
+
+Data conventions: one user maps to several clients (`username-1`, `username-2`, …,
+one per enabled inbound) sharing a common `SubID`; traffic is unlimited
+(`TotalGB: 0`); `ExpiryTime` is a Unix timestamp in milliseconds (`0` = unlimited).
 
 ---
 
-## 🛠️ Development
+## ⚙️ Configuration (env)
 
-### Main Dependencies
-- `gopkg.in/telebot.v3` - Telegram Bot API
-- `github.com/go-resty/resty/v2` - HTTP client
-- `github.com/sirupsen/logrus` - Logging
-- `github.com/patrickmn/go-cache` - Caching
-- `github.com/skip2/go-qrcode` - QR codes
-
-### Configuration
 ```env
 TG_TOKEN=your_telegram_bot_token
 TG_ADMIN_IDS=123456789,987654321
 XRAY_USER=admin
 XRAY_PASSWORD=password123
-XRAY_API_URL=http://localhost:8080/api
-XRAY_SUB_URL_PREFIX=http://localhost:8080/sub
-LOG_LEVEL=info
+XRAY_API_URL=http://localhost:54321          # base URL, NO /api suffix
+XRAY_SUB_URL_PREFIX=http://localhost:54321/sub
+LOG_LEVEL=error
 ```
 
-### Build and Run
+---
+
+## 🛠️ Development
+
 ```bash
-# Build
-go build -o bot ./cmd/bot
-
-# Run
-./bot
+make build   # build binary
+make run     # run the bot
+make test    # go test ./...
+make lint    # golangci-lint run ./...   (config: .golangci.yml)
+make fmt     # gofmt -w
+make vet     # go vet ./...
 ```
 
----
+CI (`.github/workflows/ci.yml`) runs build, `go vet`, a `gofmt` check, tests
+(`-race`) and `golangci-lint` on every pull request. `docker-build-push.yml`
+builds and publishes the image on pushes to `main`.
 
-## 🐛 Debugging and Logging
-
-### Log Levels
-- `debug` - Detailed logs for development
-- `info` - Information messages
-- `warn` - Warnings
-- `error` - Errors
-
-### Key Logs
-- X-UI API authentication
-- Client creation/deletion
-- API request errors
-- User states
-
----
-
-## 🔒 Security
-
-### Data Validation
-- Username format validation
-- Duration validation
-- Access control verification
-
-### Role System
-- **Admin**: Full access to all functions
-- **Member**: Limited access to own configurations
-- **Demo**: Information viewing only
-
----
-
-## 📝 Development Notes
-
-### Important Points
-1. **States**: Always check current user state
-2. **Caching**: X-UI API sessions are cached for optimization
-3. **Error Handling**: All API calls handle authentication errors
-4. **Bulk Operations**: Deletion and traffic reset work with all inbounds
-5. **QR Codes**: Generated for each user with common SubID
-
-### Recommendations
-- Use existing methods for creating keyboards
-- Follow state handling pattern
-- Add logging for debugging
-- Check access rights before performing operations 
+### Conventions
+- Format with `gofmt`; keep `golangci-lint` (govet, staticcheck, errcheck,
+  ineffassign, unused, misspell, unconvert, gosimple) green.
+- Comments and user-facing strings are in English; admin messages use Telegram
+  **HTML** parse mode (`<b>…</b>`), sent via `BaseHandler.sendTextMessage`.
+- Pure logic (helpers, validation, models, storage) is unit-tested — add tests
+  when changing it.
+- Thread `context.Context` through to X-UI calls; don't introduce
+  `context.Background()` inside handlers.
+- Magic numbers belong in `internal/constants`.

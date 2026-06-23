@@ -21,7 +21,7 @@
 
 ### 🌟 Key advantages
 
-- **🔐 Role-based system**: Admin, User, Demo mode
+- **🔐 Role-based system**: Admin and Trusted users (everyone else has no access)
 - **📱 User-friendly interface**: Intuitive buttons and menus with proper HTML formatting
 - **⚡ Fast operation**: Session caching and optimized requests
 - **🔄 Automation**: Bulk operations and automatic management
@@ -42,16 +42,15 @@
 - 🗑️ **User deletion** with confirmation dialogs
 - 🔗 **QR code generation** for configurations
 - ⚙️ **Bulk operations** (reset traffic for all users)
+- 🤝 **Trusted user management** (grant/revoke trusted access by @username)
 - 🎯 **Smart navigation** with universal return buttons
 
-### 👤 User
-- 🔗 **View own configurations**
-- 📱 **Get QR codes** for connection
-- 📊 **Traffic monitoring**
+### 🤝 Trusted user
+- ➕ **Create own VPN accounts** (up to 3, unlimited duration)
+- 🔗 **Get config link and QR code** for connection
+- 🗑️ **Delete own accounts** with confirmation
 
-### 🎭 Demo mode
-- ℹ️ **Bot information**
-- ❓ **Usage help**
+Everyone who is neither an admin nor a trusted user is denied access.
 
 ---
 
@@ -120,7 +119,7 @@ export TG_TOKEN=your_telegram_bot_token
 export TG_ADMIN_IDS=123456789,987654321
 export XRAY_USER=admin
 export XRAY_PASSWORD=password123
-export XRAY_API_URL=http://localhost:8080/api
+export XRAY_API_URL=http://localhost:8080
 export XRAY_SUB_URL_PREFIX=http://localhost:8080/sub
 
 # 3. Run
@@ -141,7 +140,7 @@ Replace these values in your `docker-compose.yml`:
 | `TG_ADMIN_IDS` | Your Telegram ID(s) | `123456789,987654321` |
 | `XRAY_USER` | X-UI panel username | `admin` |
 | `XRAY_PASSWORD` | X-UI panel password | `your_secure_password` |
-| `XRAY_API_URL` | X-UI panel API URL | `http://localhost:54321/api` |
+| `XRAY_API_URL` | X-UI panel base URL (no `/api` suffix) | `http://localhost:54321` |
 | `XRAY_SUB_URL_PREFIX` | Subscription URL prefix | `http://YOUR_SERVER_IP:54321/sub` |
 
 ### 📝 How to get required values
@@ -240,11 +239,14 @@ xui-tg-admin/
 │   ├── 📂 config/        # Configuration and loading
 │   ├── 📂 constants/     # Application constants
 │   ├── 📂 handlers/      # Telegram handlers
-│   │   ├── admin.go      # Admin handler
-│   │   ├── base.go       # Base handler
-│   │   ├── demo.go       # Demo handler
-│   │   ├── factory.go    # Handler factory
-│   │   └── member.go     # Member handler
+│   │   ├── admin.go                   # Admin: dispatch, start, trusted delegation
+│   │   ├── admin_members.go           # Admin: user create/edit/delete
+│   │   ├── admin_traffic.go           # Admin: online/usage/traffic reset
+│   │   ├── admin_client_operations.go # Admin: client creation across inbounds
+│   │   ├── admin_trusted.go           # Admin: trusted user management
+│   │   ├── base.go                    # Shared handler helpers
+│   │   ├── factory.go                 # Handler factory (by access type)
+│   │   └── trusted.go                 # Trusted user handler
 │   ├── 📂 helpers/       # Helper functions
 │   ├── 📂 models/        # Data models
 │   ├── 📂 permissions/   # Access control system
@@ -279,6 +281,17 @@ xui-tg-admin/
 
 ## 🛠️ Development
 
+A `Makefile` wraps the common tasks:
+
+```bash
+make build   # build the bot binary
+make run     # run the bot
+make test    # go test ./...
+make lint    # golangci-lint run ./...
+make fmt     # gofmt -w
+make vet     # go vet ./...
+```
+
 ### 🔨 Building
 
 ```bash
@@ -289,15 +302,18 @@ go build -o xui-tg-admin ./cmd/bot
 CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o xui-tg-admin ./cmd/bot
 ```
 
-### 🧪 Testing
+### 🧪 Testing & linting
 
 ```bash
-# Run tests
-go test ./...
+# Run tests (with race detector, as CI does)
+go test -race ./...
 
-# Tests with coverage
-go test -cover ./...
+# Static analysis (see .golangci.yml)
+golangci-lint run ./...
 ```
+
+CI runs build, `go vet`, `gofmt` check, tests and `golangci-lint` on every pull request
+(see `.github/workflows/ci.yml`).
 
 ### 📝 Logging
 
@@ -352,7 +368,7 @@ docker run -d \
   -e TG_ADMIN_IDS="YOUR_TELEGRAM_ID" \
   -e XRAY_USER="admin" \
   -e XRAY_PASSWORD="your_password" \
-  -e XRAY_API_URL="http://localhost:54321/api" \
+  -e XRAY_API_URL="http://localhost:54321" \
   -e XRAY_SUB_URL_PREFIX="http://YOUR_SERVER_IP:54321/sub" \
   -e LOG_LEVEL="info" \
   -v $(pwd)/data:/root/data \
