@@ -16,9 +16,6 @@ const (
 	MinDurationDays   = 1
 	MaxDurationDays   = 3650 // 10 years
 
-	// Trusted user constants
-	MaxTrustedAccounts = 3
-
 	// Network constants
 	DefaultTimeout          = 30
 	DefaultRetryCount       = 3

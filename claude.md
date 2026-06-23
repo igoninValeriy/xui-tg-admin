@@ -3,17 +3,17 @@
 ## 📋 Project Overview
 
 **X-UI Telegram Admin Bot** is a Go application that manages an X-UI (3x-ui) VPN
-panel through a Telegram bot with a role-based access system.
+panel through a Telegram bot. Access is admin-only.
 
 ### 🎯 Purpose
-Automate VPN user management from Telegram: admins create/delete users, monitor
-traffic and online status; trusted users self-serve a small number of accounts.
+Automate VPN user management from Telegram: admins create/delete users, reset
+traffic, and monitor connections and usage.
 
 ---
 
 ## 🏗️ Architecture
 
-Flow: **Telegram update → permission check → handler (by role) → services → X-UI HTTP client**.
+Flow: **Telegram update → admin check → handler → services → X-UI HTTP client**.
 
 I/O lives at the edges (`pkg/telegrambot`, `pkg/xrayclient`, `services`), and the
 cancellable request `context.Context` is threaded from `Bot.Start` all the way down
@@ -29,16 +29,14 @@ xui-tg-admin/
 │   ├── handlers/                # Telegram message handlers
 │   │   ├── base.go              # BaseHandler: shared send/keyboard helpers
 │   │   ├── factory.go           # Builds a handler for a given access type
-│   │   ├── admin.go             # AdminHandler: dispatch, /start, trusted delegation
+│   │   ├── admin.go             # AdminHandler: dispatch, /start, command routing
 │   │   ├── admin_members.go     # Admin: user create / edit / delete flows
 │   │   ├── admin_traffic.go     # Admin: online list, usage reports, traffic resets
-│   │   ├── admin_client_operations.go # Admin: client creation across inbounds
-│   │   ├── admin_trusted.go     # Admin: grant/revoke trusted users
-│   │   └── trusted.go           # TrustedHandler: self-service VPN accounts
+│   │   └── admin_client_operations.go # Admin: client creation across inbounds
 │   ├── helpers/                 # Pure helpers: username, traffic, subscription formatting
-│   ├── models/                  # Data models (Client, Inbound, MemberInfo, state, trusted)
-│   ├── permissions/             # Access control (Admin / Trusted / None)
-│   ├── services/                # XrayService, UserStateService, QRService, StorageService
+│   ├── models/                  # Data models (Client, Inbound, MemberInfo, state)
+│   ├── permissions/             # Access control (Admin / None)
+│   ├── services/                # XrayService, UserStateService, QRService
 │   └── validation/              # Username/duration validation
 └── pkg/
     ├── telegrambot/bot.go       # Bot wiring, middleware, update routing
@@ -49,17 +47,13 @@ xui-tg-admin/
 
 ## 🔐 Roles & Permissions (`internal/permissions`)
 
-Three access types — **no Demo/User roles exist**:
+Two access types — **no Trusted/Demo/User roles exist**:
 
 - **`Admin`** — Telegram IDs listed in `TG_ADMIN_IDS`. Full access.
-- **`Trusted`** — users stored in `data.json` (added by an admin via `Add Trusted`).
-  May create up to `constants.MaxTrustedAccounts` (3) of their own VPN accounts.
 - **`None`** — everyone else; the bot refuses to serve them.
 
-`PermissionController.GetAccessType(userID)` resolves the role. Trusted users are
-first added by `@username` (with a pseudo Telegram ID derived from the username
-hash) and reconciled to their real Telegram ID on their first message
-(`Bot.checkAndUpdateTrustedUser`).
+`PermissionController.GetAccessType(userID)` returns `Admin` for listed IDs and
+`None` otherwise.
 
 ---
 
@@ -75,17 +69,10 @@ command by `getButtonCommand` (strips the emoji prefix).
 `ConversationState` values (`internal/models/userstate.go`):
 `Default`, `AwaitingInputUserName`, `AwaitingDuration`, `AwaitSelectUserName`,
 `AwaitMemberAction`, `AwaitConfirmMemberDeletion`,
-`AwaitConfirmResetUsersNetworkUsage`, `StateAwaitingTrustedUsername`.
+`AwaitConfirmResetUsersNetworkUsage`.
 
 State is stored in-memory in `UserStateService` (a `go-cache` with a 30-minute TTL).
-
----
-
-## 🗄️ Storage (`internal/services/storage.go`)
-
-`StorageService` persists trusted users and their VPN accounts to a JSON file
-(`data.json` by default), written atomically (temp file + rename) and guarded by a
-`sync.RWMutex`. It holds `TrustedUser` and `VpnAccount` records.
+The bot keeps no persistent storage.
 
 ---
 
@@ -140,7 +127,7 @@ builds and publishes the image on pushes to `main`.
   ineffassign, unused, misspell, unconvert, gosimple) green.
 - Comments and user-facing strings are in English; admin messages use Telegram
   **HTML** parse mode (`<b>…</b>`), sent via `BaseHandler.sendTextMessage`.
-- Pure logic (helpers, validation, models, storage) is unit-tested — add tests
+- Pure logic (helpers, validation, models) is unit-tested — add tests
   when changing it.
 - Thread `context.Context` through to X-UI calls; don't introduce
   `context.Background()` inside handlers.

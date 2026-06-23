@@ -119,18 +119,7 @@ func (h *BaseHandler) createMainKeyboard(accessType permissions.AccessType) *tel
 				telebot.Btn{Text: "📈 " + commands.DetailedUsage},
 			},
 			{
-				telebot.Btn{Text: "➕ " + commands.AddTrusted},
-				telebot.Btn{Text: "🚫 " + commands.RevokeTrusted},
-			},
-			{
 				telebot.Btn{Text: "🔄 " + commands.ResetNetworkUsage},
-			},
-		}
-	case permissions.Trusted:
-		rows = []telebot.Row{
-			{
-				telebot.Btn{Text: "➕ " + commands.AddMember},
-				telebot.Btn{Text: "🗑 " + commands.DeleteMember},
 			},
 		}
 	}

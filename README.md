@@ -21,7 +21,7 @@
 
 ### 🌟 Key advantages
 
-- **🔐 Role-based system**: Admin and Trusted users (everyone else has no access)
+- **🔐 Access control**: Admin-only (everyone else is denied)
 - **📱 User-friendly interface**: Intuitive buttons and menus with proper HTML formatting
 - **⚡ Fast operation**: Session caching and optimized requests
 - **🔄 Automation**: Bulk operations and automatic management
@@ -42,15 +42,9 @@
 - 🗑️ **User deletion** with confirmation dialogs
 - 🔗 **QR code generation** for configurations
 - ⚙️ **Bulk operations** (reset traffic for all users)
-- 🤝 **Trusted user management** (grant/revoke trusted access by @username)
 - 🎯 **Smart navigation** with universal return buttons
 
-### 🤝 Trusted user
-- ➕ **Create own VPN accounts** (up to 3, unlimited duration)
-- 🔗 **Get config link and QR code** for connection
-- 🗑️ **Delete own accounts** with confirmation
-
-Everyone who is neither an admin nor a trusted user is denied access.
+Only Telegram IDs listed in `TG_ADMIN_IDS` may use the bot; everyone else is denied.
 
 ---
 

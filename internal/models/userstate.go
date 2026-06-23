@@ -18,8 +18,6 @@ const (
 	AwaitConfirmMemberDeletion
 	// AwaitConfirmResetUsersNetworkUsage is the state when the user is confirming network usage reset
 	AwaitConfirmResetUsersNetworkUsage
-	// StateAwaitingTrustedUsername is the state when admin is inputting trusted username
-	StateAwaitingTrustedUsername
 )
 
 // UserState represents the state of a user's conversation

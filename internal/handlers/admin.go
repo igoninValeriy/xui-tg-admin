@@ -19,8 +19,6 @@ import (
 type AdminHandler struct {
 	BaseHandler
 	commandHandlers map[string]func(context.Context, telebot.Context) error
-	trustedHandler  *AdminTrustedHandler
-	storageService  *services.StorageService
 }
 
 // NewAdminHandler creates a new admin handler
@@ -28,19 +26,14 @@ func NewAdminHandler(
 	xrayService *services.XrayService,
 	stateService *services.UserStateService,
 	qrService *services.QRService,
-	storageService *services.StorageService,
 	config *config.Config,
 	logger *logrus.Logger,
 ) *AdminHandler {
 	baseHandler := NewBaseHandler(xrayService, stateService, qrService, config, logger)
 
 	handler := &AdminHandler{
-		BaseHandler:    baseHandler,
-		storageService: storageService,
+		BaseHandler: baseHandler,
 	}
-
-	// Initialize trusted handler
-	handler.trustedHandler = NewAdminTrustedHandler(&baseHandler, storageService)
 
 	handler.initializeCommands()
 	return handler
@@ -53,11 +46,6 @@ func (h *AdminHandler) CanHandle(accessType permissions.AccessType) bool {
 
 // Handle handles a message from Telegram
 func (h *AdminHandler) Handle(ctx context.Context, c telebot.Context) error {
-	// Handle callback queries
-	if c.Callback() != nil {
-		return h.handleCallback(ctx, c)
-	}
-
 	// Get user ID
 	userID := c.Sender().ID
 
@@ -84,8 +72,6 @@ func (h *AdminHandler) Handle(ctx context.Context, c telebot.Context) error {
 		return h.processConfirmDeletion(ctx, c)
 	case models.AwaitConfirmResetUsersNetworkUsage:
 		return h.processConfirmResetUsersNetworkUsage(ctx, c)
-	case models.StateAwaitingTrustedUsername:
-		return h.processTrustedUsernameInput(ctx, c)
 	default:
 		h.logger.Warnf("Unknown state: %d", userState.State)
 		return h.handleDefaultState(ctx, c)
@@ -103,8 +89,6 @@ func (h *AdminHandler) initializeCommands() {
 		commands.NetworkUsage:      h.handleGetUsersNetworkUsage,
 		commands.DetailedUsage:     h.handleGetDetailedUsersInfo,
 		commands.ResetNetworkUsage: h.handleResetUsersNetworkUsage,
-		commands.AddTrusted:        h.handleAddTrusted,
-		commands.RevokeTrusted:     h.handleRevokeTrusted,
 		commands.ReturnToMainMenu:  h.handleStart,
 		commands.Cancel:            h.handleStart,
 	}
@@ -178,36 +162,4 @@ func (h *AdminHandler) handleStart(ctx context.Context, c telebot.Context) error
 
 	// For return to main menu, show only the keyboard without any message
 	return h.sendTextMessage(c, "🏠 <b>Main Menu</b>\n\nSelect an action:", markup)
-}
-
-// handleAddTrusted handles the add trusted user command
-func (h *AdminHandler) handleAddTrusted(ctx context.Context, c telebot.Context) error {
-	return h.trustedHandler.HandleAddTrustedRequest(ctx, c)
-}
-
-// handleRevokeTrusted handles the revoke trusted user command
-func (h *AdminHandler) handleRevokeTrusted(ctx context.Context, c telebot.Context) error {
-	return h.trustedHandler.HandleRevokeTrustedRequest(ctx, c)
-}
-
-// processTrustedUsernameInput processes trusted username input
-func (h *AdminHandler) processTrustedUsernameInput(ctx context.Context, c telebot.Context) error {
-	text := c.Text()
-	return h.trustedHandler.HandleTrustedUsernameInput(ctx, c, text)
-}
-
-// handleCallback handles callback queries for admin
-func (h *AdminHandler) handleCallback(ctx context.Context, c telebot.Context) error {
-	data := c.Callback().Data
-
-	// Handle revoke trusted user callbacks
-	if strings.HasPrefix(data, "revoke_trusted_") {
-		telegramID, err := ParseRevokeTrustedCallback(data)
-		if err != nil {
-			return c.Send("Invalid selection.")
-		}
-		return h.trustedHandler.HandleRevokeTrusted(ctx, c, telegramID)
-	}
-
-	return c.Send("Unknown action.")
 }

@@ -17,13 +17,12 @@ import (
 
 // Bot represents a Telegram bot
 type Bot struct {
-	bot            *telebot.Bot
-	config         *config.Config
-	handlers       map[permissions.AccessType]handlers.MessageHandler
-	stateService   *services.UserStateService
-	storageService *services.StorageService
-	permCtrl       *permissions.PermissionController
-	logger         *logrus.Logger
+	bot          *telebot.Bot
+	config       *config.Config
+	handlers     map[permissions.AccessType]handlers.MessageHandler
+	stateService *services.UserStateService
+	permCtrl     *permissions.PermissionController
+	logger       *logrus.Logger
 	// ctx is the application-lifetime context propagated to downstream calls.
 	// telebot provides no per-update context, so we carry the cancellable root
 	// context here to allow in-flight X-UI requests to be canceled on shutdown.
@@ -36,7 +35,6 @@ func NewBot(
 	stateService *services.UserStateService,
 	xrayService *services.XrayService,
 	qrService *services.QRService,
-	storageService *services.StorageService,
 	permCtrl *permissions.PermissionController,
 	logger *logrus.Logger,
 ) (*Bot, error) {
@@ -59,22 +57,20 @@ func NewBot(
 	}
 
 	// Create handler factory
-	factory := handlers.NewHandlerFactory(xrayService, stateService, qrService, storageService, cfg, logger)
+	factory := handlers.NewHandlerFactory(xrayService, stateService, qrService, cfg, logger)
 
 	// Create bot
 	bot := &Bot{
-		bot:            b,
-		config:         cfg,
-		handlers:       make(map[permissions.AccessType]handlers.MessageHandler),
-		stateService:   stateService,
-		storageService: storageService,
-		permCtrl:       permCtrl,
-		logger:         logger,
+		bot:          b,
+		config:       cfg,
+		handlers:     make(map[permissions.AccessType]handlers.MessageHandler),
+		stateService: stateService,
+		permCtrl:     permCtrl,
+		logger:       logger,
 	}
 
 	// Initialize handlers for different access types
 	bot.handlers[permissions.Admin] = factory.CreateHandler(permissions.Admin)
-	bot.handlers[permissions.Trusted] = factory.CreateHandler(permissions.Trusted)
 
 	// Setup middleware
 	bot.setupMiddleware()
@@ -122,14 +118,8 @@ func (b *Bot) setupMiddleware() {
 
 // handleUpdate handles an update from Telegram
 func (b *Bot) handleUpdate(c telebot.Context) error {
-	// Get user ID and username
+	// Get user ID
 	userID := c.Sender().ID
-	username := c.Sender().Username
-
-	// Check if user is trusted by username and update their telegram ID if needed
-	if username != "" {
-		b.checkAndUpdateTrustedUser(username, userID)
-	}
 
 	// Get access type
 	accessType := b.permCtrl.GetAccessType(userID)
@@ -148,17 +138,4 @@ func (b *Bot) handleUpdate(c telebot.Context) error {
 		ctx = context.Background()
 	}
 	return handler.Handle(ctx, c)
-}
-
-// checkAndUpdateTrustedUser checks if a user is trusted by username and updates their telegram ID
-func (b *Bot) checkAndUpdateTrustedUser(username string, telegramID int64) {
-	if isTrusted, storedID := b.storageService.IsTrustedByUsername(username); isTrusted {
-		// If stored ID is different from real ID, update it
-		if storedID != telegramID {
-			b.logger.Infof("Updating telegram ID for trusted user @%s: %d -> %d", username, storedID, telegramID)
-			if err := b.storageService.UpdateTrustedUserTelegramID(username, telegramID); err != nil {
-				b.logger.Errorf("Failed to update telegram ID for user @%s: %v", username, err)
-			}
-		}
-	}
 }
