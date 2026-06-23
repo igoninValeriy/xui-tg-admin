@@ -15,7 +15,7 @@ func ValidateUsername(username string) error {
 
 	for _, r := range username {
 		if !isValidUsernameChar(r) {
-			return fmt.Errorf("username can only contain letters, numbers, and underscores")
+			return fmt.Errorf("username can only contain letters, numbers, underscores and dashes")
 		}
 	}
 
@@ -40,10 +40,13 @@ func ValidateDuration(durationStr string) (int, error) {
 	return days, nil
 }
 
-// isValidUsernameChar checks if a character is valid for usernames
+// isValidUsernameChar checks if a character is valid for usernames.
+// Dashes are allowed: ExtractBaseUsername only strips the rightmost "-<digits>"
+// (the inbound suffix), so dashes inside a name are preserved.
 func isValidUsernameChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') ||
 		(r >= 'A' && r <= 'Z') ||
 		(r >= '0' && r <= '9') ||
-		r == '_'
+		r == '_' ||
+		r == '-'
 }
