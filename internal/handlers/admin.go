@@ -86,7 +86,6 @@ func (h *AdminHandler) initializeCommands() {
 		commands.EditMember:        h.handleEditMember,
 		commands.DeleteMember:      h.handleDeleteMember,
 		commands.OnlineMembers:     h.handleGetOnlineMembers,
-		commands.NetworkUsage:      h.handleGetUsersNetworkUsage,
 		commands.DetailedUsage:     h.handleGetDetailedUsersInfo,
 		commands.ResetNetworkUsage: h.handleResetUsersNetworkUsage,
 		commands.ReturnToMainMenu:  h.handleStart,

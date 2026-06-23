@@ -14,7 +14,6 @@ const (
 	EditMember        = "Edit Member"
 	DeleteMember      = "Delete Member"
 	OnlineMembers     = "Online Members"
-	NetworkUsage      = "Network Usage"
 	DetailedUsage     = "Detailed Usage"
 	ResetNetworkUsage = "Reset Network Usage"
 

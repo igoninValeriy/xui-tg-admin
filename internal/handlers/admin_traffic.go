@@ -37,22 +37,6 @@ func (h *AdminHandler) handleGetOnlineMembers(ctx context.Context, c telebot.Con
 	return h.sendTextMessage(c, message, h.createMainKeyboard(permissions.Admin))
 }
 
-// handleGetUsersNetworkUsage handles the Network Usage command
-func (h *AdminHandler) handleGetUsersNetworkUsage(ctx context.Context, c telebot.Context) error {
-
-	// Get inbounds
-	inbounds, err := h.xrayService.GetInbounds(ctx)
-	if err != nil {
-		h.logger.Errorf("Failed to get inbounds: %v", err)
-		return h.sendTextMessage(c, "❌ <b>Connection Error</b>\n\nCouldn't retrieve network usage data. Please check your server connection and try again.", h.createReturnKeyboard())
-	}
-
-	// Format beautiful network usage report
-	message := helpers.FormatNetworkUsageReport(inbounds)
-
-	return h.sendTextMessage(c, message, h.createReturnKeyboard())
-}
-
 // handleResetUsersNetworkUsage handles the Reset Network Usage command
 func (h *AdminHandler) handleResetUsersNetworkUsage(ctx context.Context, c telebot.Context) error {
 	// Set state to awaiting confirmation for reset
