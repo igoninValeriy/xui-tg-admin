@@ -3,11 +3,14 @@ module xui-tg-admin
 go 1.24
 
 require (
+	github.com/fogleman/gg v1.3.0
 	github.com/go-resty/resty/v2 v2.11.0
+	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/sirupsen/logrus v1.9.3
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/spf13/viper v1.18.2
+	golang.org/x/image v0.0.0-20190802002840-cff245a6509b
 	gopkg.in/telebot.v3 v3.2.1
 )
 
