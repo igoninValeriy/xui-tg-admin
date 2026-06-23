@@ -17,6 +17,10 @@ const (
 	DetailedUsage     = "Detailed Usage"
 	ResetNetworkUsage = "Reset Network Usage"
 
+	// Detailed Usage sub-menu
+	UsageTable = "Usage Table"
+	UsagePhoto = "Usage Photo"
+
 	// Member action commands
 	ViewConfig   = "View Config"
 	ResetTraffic = "Reset Traffic"

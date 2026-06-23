@@ -72,6 +72,8 @@ func (h *AdminHandler) Handle(ctx context.Context, c telebot.Context) error {
 		return h.processConfirmDeletion(ctx, c)
 	case models.AwaitConfirmResetUsersNetworkUsage:
 		return h.processConfirmResetUsersNetworkUsage(ctx, c)
+	case models.AwaitUsageReportChoice:
+		return h.processUsageReportChoice(ctx, c)
 	default:
 		h.logger.Warnf("Unknown state: %d", userState.State)
 		return h.handleDefaultState(ctx, c)

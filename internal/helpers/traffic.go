@@ -3,9 +3,14 @@ package helpers
 import (
 	"fmt"
 	"sort"
+	"strings"
+	"time"
 
 	"xui-tg-admin/internal/models"
 )
+
+// nearExpiryWindow is how soon before expiry a user is flagged as "expiring".
+const nearExpiryWindow = 7 * 24 * time.Hour
 
 // UserTraffic is the aggregated traffic of a single user (all their clients
 // across every inbound collapsed into one entry).
@@ -20,6 +25,15 @@ type UserTraffic struct {
 
 // Total returns the combined up+down traffic in bytes.
 func (u UserTraffic) Total() int64 { return u.Up + u.Down }
+
+// ExpiringSoon reports whether the user's expiry falls within nearExpiryWindow.
+func (u UserTraffic) ExpiringSoon(now time.Time) bool {
+	if u.ExpiryTime == 0 {
+		return false
+	}
+	exp := time.UnixMilli(u.ExpiryTime)
+	return exp.After(now) && exp.Before(now.Add(nearExpiryWindow))
+}
 
 // InboundTraffic is the aggregated traffic of a single inbound (summed over all
 // its clients), identified by its remark.
@@ -137,4 +151,66 @@ func FormatBytes(b int64) string {
 	default:
 		return fmt.Sprintf("%d B", b)
 	}
+}
+
+// maxTextUsers caps how many user lines the text report prints, keeping the
+// message comfortably under Telegram's 4096-char limit.
+const maxTextUsers = 60
+
+// FormatTrafficText renders the report as Telegram HTML. It deliberately avoids
+// <pre>: monospace blocks wrap and misalign on mobile, whereas plain HTML lines
+// wrap gracefully. Status is shown with coloured dots (see statusEmoji).
+func FormatTrafficText(report TrafficReport, now time.Time) string {
+	if len(report.Users) == 0 {
+		return "📭 <b>No Users Found</b>\n\nThere are no users in the system yet."
+	}
+
+	var sb strings.Builder
+	sb.WriteString("📊 <b>Traffic usage</b> · since last reset\n\n")
+
+	for i, u := range report.Users {
+		if i >= maxTextUsers {
+			sb.WriteString(fmt.Sprintf("…and %d more\n", len(report.Users)-i))
+			break
+		}
+		sb.WriteString(fmt.Sprintf("%s <b>%s</b> — ↓ %s · ↑ %s\n",
+			statusEmoji(u, now), escapeHTML(u.Name), FormatBytes(u.Down), FormatBytes(u.Up)))
+	}
+
+	sb.WriteString("\n➖➖➖➖➖➖\n")
+	sb.WriteString(fmt.Sprintf("Σ <b>%s</b> ↓ · <b>%s</b> ↑\n",
+		FormatBytes(report.TotalDown), FormatBytes(report.TotalUp)))
+	sb.WriteString(fmt.Sprintf("👥 %d users · 🟢 %d online\n", len(report.Users), report.OnlineCount))
+
+	if len(report.Inbounds) > 0 {
+		sb.WriteString("\n📡 <b>By inbound</b>\n")
+		for _, in := range report.Inbounds {
+			sb.WriteString(fmt.Sprintf("• <b>%s</b> — ↓ %s · ↑ %s\n",
+				escapeHTML(in.Name), FormatBytes(in.Down), FormatBytes(in.Up)))
+		}
+	}
+
+	return sb.String()
+}
+
+// statusEmoji mirrors the image legend: online / offline / disabled / expiring.
+func statusEmoji(u UserTraffic, now time.Time) string {
+	switch {
+	case !u.Enabled:
+		return "🔴"
+	case u.Online:
+		return "🟢"
+	case u.ExpiringSoon(now):
+		return "🟠"
+	default:
+		return "⚪️"
+	}
+}
+
+// escapeHTML escapes the characters that are special in Telegram HTML mode.
+func escapeHTML(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
 }

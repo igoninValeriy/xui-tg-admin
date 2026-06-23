@@ -1,7 +1,9 @@
 package helpers
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	"xui-tg-admin/internal/models"
 )
@@ -96,6 +98,35 @@ func TestAggregateTrafficGroupsBySubID(t *testing.T) {
 	}
 	if report.Inbounds[1].Name != "in2" {
 		t.Errorf("inbound[1] = %q, want in2", report.Inbounds[1].Name)
+	}
+}
+
+func TestFormatTrafficText(t *testing.T) {
+	now := time.Unix(1750000000, 0)
+	report := TrafficReport{
+		Users: []UserTraffic{
+			{Name: "alice", Down: 5 * gb, Up: gb, Enabled: true, Online: true},
+			{Name: "bob<x>", Down: gb, Enabled: false},
+		},
+		Inbounds:    []InboundTraffic{{Name: "in1", Down: 6 * gb, Up: gb}},
+		TotalDown:   6 * gb,
+		TotalUp:     gb,
+		OnlineCount: 1,
+	}
+
+	out := FormatTrafficText(report, now)
+
+	if strings.Contains(out, "<pre>") {
+		t.Error("text report must not use <pre> (it wraps and misaligns on mobile)")
+	}
+	if !strings.Contains(out, "alice") {
+		t.Error("missing user name")
+	}
+	if !strings.Contains(out, "bob&lt;x&gt;") {
+		t.Errorf("username not HTML-escaped: %q", out)
+	}
+	if !strings.Contains(out, "By inbound") {
+		t.Error("missing by-inbound section")
 	}
 }
 

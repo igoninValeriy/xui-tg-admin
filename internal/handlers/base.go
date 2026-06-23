@@ -99,10 +99,15 @@ func (h *BaseHandler) sendQRCode(c telebot.Context, url string) error {
 	return err
 }
 
-// sendPhotoBytes sends a raw image (e.g. a rendered PNG) as a photo.
-func (h *BaseHandler) sendPhotoBytes(c telebot.Context, img []byte) error {
+// sendPhotoBytes sends a raw image (e.g. a rendered PNG) as a photo, optionally
+// with a reply keyboard.
+func (h *BaseHandler) sendPhotoBytes(c telebot.Context, img []byte, markup *telebot.ReplyMarkup) error {
 	photo := &telebot.Photo{File: telebot.FromReader(bytes.NewReader(img))}
-	_, err := c.Bot().Send(c.Recipient(), photo)
+	var opts []interface{}
+	if markup != nil {
+		opts = append(opts, markup)
+	}
+	_, err := c.Bot().Send(c.Recipient(), photo, opts...)
 	if err != nil {
 		h.logger.Errorf("Failed to send photo: %v", err)
 	}
@@ -135,6 +140,25 @@ func (h *BaseHandler) createMainKeyboard(accessType permissions.AccessType) *tel
 	}
 
 	markup.Reply(rows...)
+	return markup
+}
+
+// createUsageReportKeyboard creates the Detailed Usage sub-menu (Table / Photo / Back)
+func (h *BaseHandler) createUsageReportKeyboard() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{
+		ResizeKeyboard: true,
+	}
+
+	markup.Reply(
+		telebot.Row{
+			telebot.Btn{Text: "📊 " + commands.UsageTable},
+			telebot.Btn{Text: "🖼 " + commands.UsagePhoto},
+		},
+		telebot.Row{
+			telebot.Btn{Text: "↩️ " + commands.ReturnToMainMenu},
+		},
+	)
+
 	return markup
 }
 
