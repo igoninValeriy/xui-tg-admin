@@ -111,36 +111,65 @@ func (h *AdminHandler) handleResetTraffic(ctx context.Context, c telebot.Context
 	return h.sendTextMessage(c, message, h.createUserActionKeyboard())
 }
 
-// handleGetDetailedUsersInfo handles the Detailed Usage command
+// handleGetDetailedUsersInfo shows the Detailed Usage sub-menu (Table / Photo / Back).
 func (h *AdminHandler) handleGetDetailedUsersInfo(ctx context.Context, c telebot.Context) error {
+	if err := h.stateService.WithConversationState(c.Sender().ID, models.AwaitUsageReportChoice); err != nil {
+		h.logger.Errorf("Failed to set state: %v", err)
+		return err
+	}
+	return h.sendTextMessage(c, "📈 <b>Detailed Usage</b>\n\nChoose how to view the traffic report:", h.createUsageReportKeyboard())
+}
 
-	// Get inbounds
+// processUsageReportChoice handles the Detailed Usage sub-menu selection. Every
+// branch returns the user to the main menu when done.
+func (h *AdminHandler) processUsageReportChoice(ctx context.Context, c telebot.Context) error {
+	switch h.getButtonCommand(c.Text()) {
+	case commands.UsageTable:
+		return h.sendUsageReport(ctx, c, false)
+	case commands.UsagePhoto:
+		return h.sendUsageReport(ctx, c, true)
+	case commands.ReturnToMainMenu:
+		return h.handleStart(ctx, c)
+	default:
+		return h.sendTextMessage(c, "❓ Please choose <b>Table</b>, <b>Photo</b> or go back.", h.createUsageReportKeyboard())
+	}
+}
+
+// sendUsageReport fetches traffic data and sends it as a rendered image (asPhoto)
+// or as a text table, then returns the user to the main menu.
+func (h *AdminHandler) sendUsageReport(ctx context.Context, c telebot.Context, asPhoto bool) error {
+	mainKeyboard := h.createMainKeyboard(permissions.Admin)
+
+	if err := h.stateService.ClearState(c.Sender().ID); err != nil {
+		h.logger.Errorf("Failed to clear user state: %v", err)
+	}
+
 	inbounds, err := h.xrayService.GetInbounds(ctx)
 	if err != nil {
 		h.logger.Errorf("Failed to get inbounds: %v", err)
-		return h.sendTextMessage(c, "❌ <b>Connection Error</b>\n\nCouldn't retrieve detailed usage data. Please check your server connection and try again.", h.createMainKeyboard(permissions.Admin))
+		return h.sendTextMessage(c, "❌ <b>Connection Error</b>\n\nCouldn't retrieve usage data. Please check your server connection and try again.", mainKeyboard)
 	}
 
-	// Get online users for status indication
 	onlineUsers, err := h.xrayService.GetOnlineUsers(ctx)
 	if err != nil {
 		h.logger.Errorf("Failed to get online users: %v", err)
-		// Continue with empty online users list if this fails
 		onlineUsers = []string{}
 	}
 
-	// Render the visual report and send it as a photo. On any failure we still
-	// send the text table below, so the admin is never left empty-handed.
 	report := helpers.AggregateTraffic(inbounds, onlineUsers)
-	if img, rerr := render.TrafficReport(report, time.Now()); rerr != nil {
-		h.logger.Errorf("Failed to render traffic report image: %v", rerr)
-	} else if serr := h.sendPhotoBytes(c, img); serr != nil {
-		h.logger.Errorf("Failed to send traffic report image: %v", serr)
+	now := time.Now()
+
+	// On a render failure we fall back to the text table, so the admin is never
+	// left empty-handed.
+	if asPhoto {
+		img, rerr := render.TrafficReport(report, now)
+		if rerr == nil {
+			return h.sendPhotoBytes(c, img, mainKeyboard)
+		}
+		h.logger.Errorf("Failed to render traffic report image, falling back to text: %v", rerr)
 	}
 
-	// Text table alongside the image (also carries the main keyboard).
-	message := helpers.FormatCompactTrafficReport(inbounds, onlineUsers)
-	return h.sendTextMessage(c, message, h.createMainKeyboard(permissions.Admin))
+	return h.sendTextMessage(c, helpers.FormatTrafficText(report, now), mainKeyboard)
 }
 
 // processConfirmResetUsersNetworkUsage processes the confirmation for resetting network usage

@@ -24,23 +24,21 @@ const (
 	marginX = 48
 	marginY = 44
 
-	headerH    = 116
-	rowH       = 132
-	sectionH   = 70 // "By inbound" sub-header height
-	inbRowH    = 96 // compact per-inbound row
-	footerGapH = 24 // space above the total divider
-	footerH    = 96 // total block height
-	legendH    = 64 // colour legend at the very bottom
+	headerH    = 100
+	userCellH  = 80 // compact two-line user cell + thin bar
+	colGap     = 36 // gap between the two user columns
+	zeroNoteH  = 54 // "+N users with no traffic" line
+	sectionH   = 64 // "By inbound" sub-header height
+	inbRowH    = 78 // per-inbound row
+	footerGapH = 20 // space above the total divider
+	footerH    = 92 // total block height
+	legendH    = 60 // color legend at the very bottom
 
-	dotRadius = 9
-	nameX     = marginX + 42
+	dotRadius = 8
+	userBarH  = 7 // thin per-user bar
 
-	barH = 14
-
-	inbSwatch = 18 // side of the inbound colour swatch
+	inbSwatch = 18 // side of the inbound color swatch
 	inbBarH   = 12
-
-	nearExpiryDays = 7
 )
 
 // Palette — GitHub-dark inspired.
@@ -81,7 +79,20 @@ func face(ttf []byte, size float64) font.Face {
 
 // TrafficReport renders the aggregated traffic report as a PNG.
 func TrafficReport(report helpers.TrafficReport, generatedAt time.Time) ([]byte, error) {
-	height := marginY*2 + headerH + len(report.Users)*rowH + footerGapH + footerH + legendH
+	// Only users with traffic get a cell; the rest collapse into one summary line.
+	active := make([]helpers.UserTraffic, 0, len(report.Users))
+	for _, u := range report.Users {
+		if u.Total() > 0 {
+			active = append(active, u)
+		}
+	}
+	zeros := len(report.Users) - len(active)
+	rows := (len(active) + 1) / 2 // two columns
+
+	height := marginY*2 + headerH + rows*userCellH + footerGapH + footerH + legendH
+	if zeros > 0 {
+		height += zeroNoteH
+	}
 	if len(report.Inbounds) > 0 {
 		height += sectionH + len(report.Inbounds)*inbRowH
 	}
@@ -91,12 +102,12 @@ func TrafficReport(report helpers.TrafficReport, generatedAt time.Time) ([]byte,
 	dc.Clear()
 
 	var (
-		fontTitle = face(gobold.TTF, 44)
-		fontName  = face(gomedium.TTF, 34)
-		fontNum   = face(gobold.TTF, 36)
-		fontSub   = face(goregular.TTF, 26)
-		fontLabel = face(gomedium.TTF, 24)
-		fontFoot  = face(gobold.TTF, 40)
+		fontTitle = face(gobold.TTF, 42)
+		fontName  = face(gomedium.TTF, 30)
+		fontNum   = face(gobold.TTF, 32)
+		fontSub   = face(goregular.TTF, 23)
+		fontLabel = face(gomedium.TTF, 23)
+		fontFoot  = face(gobold.TTF, 38)
 	)
 
 	// Largest totals drive proportional bar lengths within each section.
@@ -129,10 +140,24 @@ func TrafficReport(report helpers.TrafficReport, generatedAt time.Time) ([]byte,
 
 	y := float64(marginY + headerH)
 
-	// ---- User rows ----
-	for _, u := range report.Users {
-		drawUserRow(dc, u, y, maxUser, generatedAt, fontName, fontNum, fontSub)
-		y += rowH
+	// ---- User cells (two columns, filled top-to-bottom: left column first) ----
+	colW := float64(width-2*marginX-colGap) / 2
+	xLeft := float64(marginX)
+	xRight := float64(marginX) + colW + colGap
+	half := (len(active) + 1) / 2
+	for i := 0; i < half; i++ {
+		drawUserCell(dc, active[i], xLeft, y, colW, maxUser, generatedAt, fontName, fontNum, fontSub)
+		if r := i + half; r < len(active) {
+			drawUserCell(dc, active[r], xRight, y, colW, maxUser, generatedAt, fontName, fontNum, fontSub)
+		}
+		y += userCellH
+	}
+
+	if zeros > 0 {
+		dc.SetFontFace(fontSub)
+		dc.SetHexColor(colDim)
+		dc.DrawString(fmt.Sprintf("+ %d users with no traffic", zeros), float64(marginX), y+32)
+		y += zeroNoteH
 	}
 
 	// ---- By-inbound section ----
@@ -186,7 +211,7 @@ func drawLegend(dc *gg.Context, cy float64, fontLabel font.Face) {
 	const gapDotText = 16.0
 	const gapItems = 40.0
 
-	// Measure total width to centre the legend.
+	// Measure total width to center the legend.
 	total := 0.0
 	for i, it := range items {
 		w, _ := dc.MeasureString(it.label)
@@ -210,43 +235,44 @@ func drawLegend(dc *gg.Context, cy float64, fontLabel font.Face) {
 	}
 }
 
-func drawUserRow(
+// drawUserCell renders one user inside a column of width colW at (x, y):
+// status dot + name + total on the first line, down/up on the second, and a
+// thin proportional bar at the bottom.
+func drawUserCell(
 	dc *gg.Context,
 	u helpers.UserTraffic,
-	y float64,
+	x, y, colW float64,
 	maxTotal int64,
 	now time.Time,
 	fontName, fontNum, fontSub font.Face,
 ) {
-	line1 := y + 24
-	line2 := y + 64
+	c1 := y + 24
+	c2 := y + 50
+	textX := x + float64(dotRadius)*2 + 14
 
 	// Status dot.
 	dc.SetHexColor(statusColor(u, now))
-	dc.DrawCircle(marginX+dotRadius+4, line1, dotRadius)
+	dc.DrawCircle(x+float64(dotRadius)+2, c1, float64(dotRadius))
 	dc.Fill()
 
-	// Name.
+	// Name (left) + total (right).
 	dc.SetFontFace(fontName)
 	dc.SetHexColor(nameColor(u))
-	dc.DrawStringAnchored(u.Name, nameX, line1, 0, 0.5)
+	dc.DrawStringAnchored(u.Name, textX, c1, 0, 0.5)
 
-	// Total (big, right-aligned).
 	dc.SetFontFace(fontNum)
 	dc.SetHexColor(colText)
-	dc.DrawStringAnchored(helpers.FormatBytes(u.Total()), width-marginX, line1, 1, 0.5)
+	dc.DrawStringAnchored(helpers.FormatBytes(u.Total()), x+colW, c1, 1, 0.5)
 
-	// Secondary line: down/up on the left, expiry on the right.
+	// Down/up on the second line.
 	dc.SetFontFace(fontSub)
 	dc.SetHexColor(colDim)
 	dc.DrawStringAnchored(
-		fmt.Sprintf("↓ %s    ↑ %s", helpers.FormatBytes(u.Down), helpers.FormatBytes(u.Up)),
-		nameX, line2, 0, 0.5)
-	dc.SetHexColor(expiryColor(u, now))
-	dc.DrawStringAnchored(expiryLabel(u), width-marginX, line2, 1, 0.5)
+		fmt.Sprintf("↓ %s · ↑ %s", helpers.FormatBytes(u.Down), helpers.FormatBytes(u.Up)),
+		textX, c2, 0, 0.5)
 
-	// Proportional usage bar spanning the row width, blue gradient.
-	drawBar(dc, float64(marginX), y+float64(rowH)-30, float64(width-2*marginX), barH,
+	// Thin proportional bar spanning the column, blue gradient.
+	drawBar(dc, x, y+float64(userCellH)-16, colW, userBarH,
 		float64(u.Total())/float64(maxTotal), gradientFill)
 }
 
@@ -331,7 +357,7 @@ func statusColor(u helpers.UserTraffic, now time.Time) string {
 		return colRed
 	case u.Online:
 		return colGreen
-	case isNearExpiry(u, now):
+	case u.ExpiringSoon(now):
 		return colAmber
 	default:
 		return colGrey
@@ -343,26 +369,4 @@ func nameColor(u helpers.UserTraffic) string {
 		return colDim
 	}
 	return colText
-}
-
-func expiryColor(u helpers.UserTraffic, now time.Time) string {
-	if isNearExpiry(u, now) {
-		return colAmber
-	}
-	return colDim
-}
-
-func expiryLabel(u helpers.UserTraffic) string {
-	if u.ExpiryTime == 0 {
-		return "∞"
-	}
-	return "until " + time.UnixMilli(u.ExpiryTime).Format("02 Jan 2006")
-}
-
-func isNearExpiry(u helpers.UserTraffic, now time.Time) bool {
-	if u.ExpiryTime == 0 {
-		return false
-	}
-	exp := time.UnixMilli(u.ExpiryTime)
-	return exp.After(now) && exp.Before(now.AddDate(0, 0, nearExpiryDays))
 }
