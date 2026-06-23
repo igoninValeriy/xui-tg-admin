@@ -153,14 +153,20 @@ func FormatBytes(b int64) string {
 	}
 }
 
-// maxTextUsers caps how many user lines the text report prints, keeping the
-// message comfortably under Telegram's 4096-char limit.
-const maxTextUsers = 60
+const (
+	// maxTextRows caps how many user rows the text table prints, keeping the
+	// message under Telegram's 4096-char limit.
+	maxTextRows = 60
+	// tableNameW is the width of the name column. The whole row is
+	// tableNameW + 14 chars (name + " " + 6 + " " + 6) — narrow enough that
+	// Telegram does not wrap the <pre> block on a phone.
+	tableNameW = 13
+)
 
-// FormatTrafficText renders the report as Telegram HTML. It deliberately avoids
-// <pre>: monospace blocks wrap and misalign on mobile, whereas plain HTML lines
-// wrap gracefully. Status is shown with colored dots (see statusEmoji).
-func FormatTrafficText(report TrafficReport, now time.Time) string {
+// FormatTrafficText renders the report as a monospace <pre> table. Columns are
+// aligned by padding the raw (pre-escape) name to a fixed width; HTML escaping
+// happens afterwards so entities like &lt; never throw the alignment off.
+func FormatTrafficText(report TrafficReport, _ time.Time) string {
 	if len(report.Users) == 0 {
 		return "📭 <b>No Users Found</b>\n\nThere are no users in the system yet."
 	}
@@ -168,42 +174,84 @@ func FormatTrafficText(report TrafficReport, now time.Time) string {
 	var sb strings.Builder
 	sb.WriteString("📊 <b>Traffic usage</b> · since last reset\n\n")
 
-	for i, u := range report.Users {
-		if i >= maxTextUsers {
-			sb.WriteString(fmt.Sprintf("…and %d more\n", len(report.Users)-i))
-			break
-		}
-		sb.WriteString(fmt.Sprintf("%s <b>%s</b> — ↓ %s · ↑ %s\n",
-			statusEmoji(u, now), escapeHTML(u.Name), FormatBytes(u.Down), FormatBytes(u.Up)))
+	sb.WriteString("<pre>\n")
+	sb.WriteString(tableRow("User", "Down", "Up"))
+	sb.WriteString(tableRule())
+
+	rows, extra := report.Users, 0
+	if len(rows) > maxTextRows {
+		extra = len(rows) - maxTextRows
+		rows = rows[:maxTextRows]
+	}
+	for _, u := range rows {
+		sb.WriteString(tableRow(u.Name, FormatBytesShort(u.Down), FormatBytesShort(u.Up)))
 	}
 
-	sb.WriteString("\n➖➖➖➖➖➖\n")
-	sb.WriteString(fmt.Sprintf("Σ <b>%s</b> ↓ · <b>%s</b> ↑\n",
-		FormatBytes(report.TotalDown), FormatBytes(report.TotalUp)))
+	sb.WriteString(tableRule())
+	sb.WriteString(tableRow("TOTAL", FormatBytesShort(report.TotalDown), FormatBytesShort(report.TotalUp)))
+	sb.WriteString("</pre>\n")
+
+	if extra > 0 {
+		sb.WriteString(fmt.Sprintf("…and %d more\n", extra))
+	}
 	sb.WriteString(fmt.Sprintf("👥 %d users · 🟢 %d online\n", len(report.Users), report.OnlineCount))
 
 	if len(report.Inbounds) > 0 {
-		sb.WriteString("\n📡 <b>By inbound</b>\n")
+		sb.WriteString("\n📡 <b>By inbound</b>\n<pre>\n")
 		for _, in := range report.Inbounds {
-			sb.WriteString(fmt.Sprintf("• <b>%s</b> — ↓ %s · ↑ %s\n",
-				escapeHTML(in.Name), FormatBytes(in.Down), FormatBytes(in.Up)))
+			sb.WriteString(tableRow(in.Name, FormatBytesShort(in.Down), FormatBytesShort(in.Up)))
 		}
+		sb.WriteString("</pre>")
 	}
 
 	return sb.String()
 }
 
-// statusEmoji mirrors the image legend: online / offline / disabled / expiring.
-func statusEmoji(u UserTraffic, now time.Time) string {
+// tableRow formats one aligned <pre> row: name left-padded to tableNameW,
+// then two 6-wide right-aligned number columns.
+func tableRow(name, down, up string) string {
+	return fmt.Sprintf("%s %6s %6s\n", escapeHTML(padName(name, tableNameW)), down, up)
+}
+
+// tableRule returns a horizontal rule the exact width of a table row.
+func tableRule() string {
+	return strings.Repeat("─", tableNameW+14) + "\n"
+}
+
+// padName pads name to w visual columns, truncating with an ellipsis if longer.
+func padName(name string, w int) string {
+	r := []rune(name)
+	if len(r) > w {
+		return string(r[:w-1]) + "…"
+	}
+	return name + strings.Repeat(" ", w-len(r))
+}
+
+// FormatBytesShort renders a byte count in at most ~5 chars (e.g. 98.2G, 734M),
+// for compact table columns.
+func FormatBytesShort(b int64) string {
+	const (
+		kb = 1 << 10
+		mb = 1 << 20
+		gb = 1 << 30
+		tb = 1 << 40
+	)
+	f := float64(b)
 	switch {
-	case !u.Enabled:
-		return "🔴"
-	case u.Online:
-		return "🟢"
-	case u.ExpiringSoon(now):
-		return "🟠"
+	case b >= tb:
+		return fmt.Sprintf("%.1fT", f/tb)
+	case b >= 100*gb:
+		return fmt.Sprintf("%.0fG", f/gb)
+	case b >= gb:
+		return fmt.Sprintf("%.1fG", f/gb)
+	case b >= 100*mb:
+		return fmt.Sprintf("%.0fM", f/mb)
+	case b >= mb:
+		return fmt.Sprintf("%.1fM", f/mb)
+	case b >= kb:
+		return fmt.Sprintf("%.0fK", f/kb)
 	default:
-		return "⚪️"
+		return fmt.Sprintf("%dB", b)
 	}
 }
 

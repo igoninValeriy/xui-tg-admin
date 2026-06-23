@@ -116,8 +116,8 @@ func TestFormatTrafficText(t *testing.T) {
 
 	out := FormatTrafficText(report, now)
 
-	if strings.Contains(out, "<pre>") {
-		t.Error("text report must not use <pre> (it wraps and misaligns on mobile)")
+	if !strings.Contains(out, "<pre>") {
+		t.Error("text report should render an aligned <pre> table")
 	}
 	if !strings.Contains(out, "alice") {
 		t.Error("missing user name")
@@ -125,8 +125,29 @@ func TestFormatTrafficText(t *testing.T) {
 	if !strings.Contains(out, "bob&lt;x&gt;") {
 		t.Errorf("username not HTML-escaped: %q", out)
 	}
+	if !strings.Contains(out, "TOTAL") {
+		t.Error("missing total row")
+	}
 	if !strings.Contains(out, "By inbound") {
 		t.Error("missing by-inbound section")
+	}
+}
+
+func TestFormatBytesShort(t *testing.T) {
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, "0B"},
+		{5 * gb, "5.0G"},
+		{112 * gb, "112G"},
+		{734 * (1 << 20), "734M"},
+		{3 * (1 << 20), "3.0M"},
+	}
+	for _, c := range cases {
+		if got := FormatBytesShort(c.in); got != c.want {
+			t.Errorf("FormatBytesShort(%d) = %q, want %q", c.in, got, c.want)
+		}
 	}
 }
 
