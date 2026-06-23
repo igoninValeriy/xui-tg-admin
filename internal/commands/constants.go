@@ -20,14 +20,6 @@ const (
 	AddTrusted        = "Add Trusted"
 	RevokeTrusted     = "Revoke Trusted"
 
-	// Member commands
-	CreateNewConfig = "Create New Config"
-	ViewConfigsInfo = "View Configs Info"
-
-	// Demo user commands
-	About = "About"
-	Help  = "Help"
-
 	// Member action commands
 	ViewConfig   = "View Config"
 	ResetTraffic = "Reset Traffic"

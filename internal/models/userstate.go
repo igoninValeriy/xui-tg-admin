@@ -20,15 +20,6 @@ const (
 	AwaitConfirmResetUsersNetworkUsage
 	// StateAwaitingTrustedUsername is the state when admin is inputting trusted username
 	StateAwaitingTrustedUsername
-	// StateAwaitingVpnUsername is the state when trusted user is inputting VPN username
-	StateAwaitingVpnUsername
-	// StateAwaitingVpnPassword is the state when trusted user is inputting VPN password
-	StateAwaitingVpnPassword
-)
-
-// Additional state constants for trusted user functionality
-const (
-	StateDefault = Default
 )
 
 // UserState represents the state of a user's conversation
