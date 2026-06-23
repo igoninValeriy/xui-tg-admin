@@ -13,14 +13,18 @@ func TestValidateUsername(t *testing.T) {
 		input   string
 		wantErr bool
 	}{
-		{"too short", "ab", true},
-		{"min length", "abc", false},
-		{"with underscore and digits", "john_doe123", false},
-		{"with dash", "my-vpn-2024", false},
-		{"invalid char", "ab!", true},
-		{"with space", "a b c", true},
-		{"slash rejected", "a/b/c", true},
 		{"empty", "", true},
+		{"single char", "a", false},
+		{"two chars", "ab", false},
+		{"underscore and digits", "john_doe123", false},
+		{"dash", "my-vpn-2024", false},
+		{"dot", "john.doe", false},
+		{"tilde", "a~b", false},
+		{"space rejected", "a b c", true},
+		{"slash rejected", "a/b/c", true},
+		{"bang rejected", "ab!", true},
+		{"at rejected", "a@b", true},
+		{"cyrillic rejected", "вася", true},
 		{"max length", strings.Repeat("a", constants.MaxUsernameLength), false},
 		{"over max length", strings.Repeat("a", constants.MaxUsernameLength+1), true},
 	}

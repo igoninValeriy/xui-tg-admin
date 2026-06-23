@@ -2,8 +2,7 @@ package constants
 
 const (
 	// User validation constants
-	MinUsernameLength = 3
-	MaxUsernameLength = 32
+	MaxUsernameLength = 64
 
 	// User naming constants
 	UsernameSeparator = "-"

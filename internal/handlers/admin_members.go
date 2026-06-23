@@ -27,7 +27,7 @@ func (h *AdminHandler) handleAddMember(ctx context.Context, c telebot.Context) e
 
 	// Show return keyboard
 	markup := h.createReturnKeyboard()
-	return h.sendTextMessage(c, "👤 <b>Add New User</b>\n\n📝 Please enter a username for the new user:\n\n<i>• Letters, numbers, _ and -\n• 3–32 characters\n• Example: john_doe, user-123</i>", markup)
+	return h.sendTextMessage(c, "👤 <b>Add New User</b>\n\n📝 Please enter a username for the new user:\n\n<i>• Letters, numbers and - . _ ~\n• Up to 64 characters\n• Example: john_doe, user-123</i>", markup)
 }
 
 // handleEditMember handles the Edit Member command
@@ -68,7 +68,7 @@ func (h *AdminHandler) processUserName(ctx context.Context, c telebot.Context) e
 
 	// Validate username format
 	if err := validation.ValidateUsername(username); err != nil {
-		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>Invalid Username</b>\n\n%s\n\n💡 <b>Requirements:</b>\n• 3–32 characters\n• Letters, numbers, _ and -\n• Example: john_doe, user-123\n\nPlease try again:", err.Error()), h.createReturnKeyboard())
+		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>Invalid Username</b>\n\n%s\n\n💡 Allowed: letters, numbers and <code>- . _ ~</code> (up to 64 characters)\n\nPlease try again:", err.Error()), h.createReturnKeyboard())
 	}
 
 	// Store username in state
