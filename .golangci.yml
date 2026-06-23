@@ -1,0 +1,30 @@
+run:
+  timeout: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - govet        # suspicious constructs
+    - staticcheck  # broad correctness/style analysis
+    - errcheck     # unchecked errors
+    - ineffassign  # ineffectual assignments
+    - unused       # unused code
+    - misspell     # common misspellings
+    - unconvert    # redundant type conversions
+    - gosimple     # code simplifications
+
+linters-settings:
+  errcheck:
+    # Telegram sends are intentionally fire-and-forget in handler hot paths;
+    # genuine errors there are already logged where it matters.
+    exclude-functions:
+      - (gopkg.in/telebot.v3.Context).Send
+      - (gopkg.in/telebot.v3.Context).Edit
+      - (gopkg.in/telebot.v3.Context).Reply
+      - (*gopkg.in/telebot.v3.Bot).Delete
+  misspell:
+    locale: US
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
