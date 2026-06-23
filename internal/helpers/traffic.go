@@ -59,10 +59,6 @@ func FormatTableLine(email string, downBytes int64, upBytes int64) string {
 	downGB := float64(downBytes) / constants.BytesInGB
 	upGB := float64(upBytes) / constants.BytesInGB
 
-	displayEmail := email
-	if len(email) > constants.MaxEmailDisplayLength {
-		displayEmail = email[:constants.MaxEmailSuffixLength] + "..."
-	}
-
-	return fmt.Sprintf("%-17s | %6.2f | %6.2f\n", displayEmail, downGB, upGB)
+	// Show the full email; %-17s pads short names but never truncates long ones.
+	return fmt.Sprintf("%-17s | %6.2f | %6.2f\n", email, downGB, upGB)
 }

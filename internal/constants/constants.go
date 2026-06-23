@@ -27,8 +27,6 @@ const (
 	CacheCleanupInterval = 10 // minutes
 
 	// Formatting constants
-	MaxEmailDisplayLength = 17
-	MaxEmailSuffixLength  = 14
-	TimestampFormat       = "2006-01-02 15:04:05"
-	DateFormat            = "2006-01-02"
+	TimestampFormat = "2006-01-02 15:04:05"
+	DateFormat      = "2006-01-02"
 )

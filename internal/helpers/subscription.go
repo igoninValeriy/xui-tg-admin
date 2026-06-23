@@ -54,16 +54,20 @@ func FormatCompactTrafficReport(inbounds []models.Inbound, onlineUsers []string)
 		onlineSet[baseUser] = true
 	}
 
-	// Aggregate user data by base username
+	// Map each email to its SubID so a user's clients across different protocols
+	// group together, regardless of how the username is spelled.
+	emailToSubID := BuildEmailToSubID(inbounds)
+
+	// Aggregate user data by group key (SubID, falling back to base username)
 	userSummary := make(map[string]*UserTrafficSummary)
 
 	for _, inbound := range inbounds {
 		for _, clientStat := range inbound.ClientStats {
-			baseUsername := ExtractBaseUsername(clientStat.Email)
+			groupKey := UserGroupKey(clientStat.Email, emailToSubID)
 
-			if userSummary[baseUsername] == nil {
-				userSummary[baseUsername] = &UserTrafficSummary{
-					BaseUsername: baseUsername,
+			if userSummary[groupKey] == nil {
+				userSummary[groupKey] = &UserTrafficSummary{
+					BaseUsername: ExtractBaseUsername(clientStat.Email),
 					TotalUp:      0,
 					TotalDown:    0,
 					Enable:       clientStat.Enable,
@@ -72,7 +76,7 @@ func FormatCompactTrafficReport(inbounds []models.Inbound, onlineUsers []string)
 				}
 			}
 
-			summary := userSummary[baseUsername]
+			summary := userSummary[groupKey]
 			summary.TotalUp += clientStat.Up
 			summary.TotalDown += clientStat.Down
 
@@ -139,8 +143,8 @@ func FormatCompactTrafficReport(inbounds []models.Inbound, onlineUsers []string)
 			statusIcon = "🟢"
 		}
 
-		// Extract clean username (remove everything after @ or _)
-		displayName := extractCleanUsername(summary.BaseUsername)
+		// Show the full base username (only the inbound-number suffix is stripped)
+		displayName := summary.BaseUsername
 
 		// Convert traffic to GB with 2 decimal places
 		downGB := float64(summary.TotalDown) / constants.BytesInGB
@@ -257,11 +261,9 @@ func formatTrafficReportLine(line TrafficReportLine) string {
 		return line.DisplayName + "─────────────────"
 	}
 
-	// Prepare display name with proper width
+	// Display the full name; %-*s pads short names but never truncates long ones,
+	// so usernames are shown in full even if they exceed the nominal column width.
 	displayName := line.DisplayName
-	if len(displayName) > nameWidth {
-		displayName = displayName[:nameWidth-3] + "..."
-	}
 
 	// Format traffic values
 	var trafficStr string
@@ -299,19 +301,4 @@ type UserTrafficSummary struct {
 type InboundTrafficStats struct {
 	Down int64
 	Up   int64
-}
-
-// extractCleanUsername removes everything after @ or _ to get clean display name
-func extractCleanUsername(username string) string {
-	// Find @ symbol
-	if atIndex := strings.Index(username, "@"); atIndex != -1 {
-		return username[:atIndex]
-	}
-
-	// Find _ symbol
-	if underIndex := strings.Index(username, "_"); underIndex != -1 {
-		return username[:underIndex]
-	}
-
-	return username
 }

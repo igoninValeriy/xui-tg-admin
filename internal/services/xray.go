@@ -62,15 +62,20 @@ func (s *XrayService) GetAllMembersWithInfo(ctx context.Context, sortType models
 		return nil, err
 	}
 
-	// Создаем карту для группировки пользователей по базовому имени
+	// Группируем по SubID (общий для всех протоколов одного юзера), fallback на
+	// базовое имя. Так клиенты одного пользователя в разных инбаундах сливаются
+	// в одну запись, не полагаясь на разбор имени.
+	emailToSubID := helpers.BuildEmailToSubID(inbounds)
+
+	// Карта группировки пользователей по ключу группы
 	memberMap := make(map[string]*models.MemberInfo)
 
 	// Собираем информацию из ClientStats
 	for _, inbound := range inbounds {
 		for _, clientStat := range inbound.ClientStats {
-			baseUsername := helpers.ExtractBaseUsername(clientStat.Email)
+			groupKey := helpers.UserGroupKey(clientStat.Email, emailToSubID)
 
-			if memberInfo, exists := memberMap[baseUsername]; exists {
+			if memberInfo, exists := memberMap[groupKey]; exists {
 				// Обновляем существующую запись
 				memberInfo.FullEmails = append(memberInfo.FullEmails, clientStat.Email)
 				memberInfo.TotalUp += clientStat.Up
@@ -91,7 +96,7 @@ func (s *XrayService) GetAllMembersWithInfo(ctx context.Context, sortType models
 			} else {
 				// Создаем новую запись
 				memberInfo := &models.MemberInfo{
-					BaseUsername: baseUsername,
+					BaseUsername: helpers.ExtractBaseUsername(clientStat.Email),
 					FullEmails:   []string{clientStat.Email},
 					ID:           clientStat.ID,
 					Enable:       clientStat.Enable,
@@ -100,7 +105,7 @@ func (s *XrayService) GetAllMembersWithInfo(ctx context.Context, sortType models
 					TotalDown:    clientStat.Down,
 					TotalTraffic: clientStat.Up + clientStat.Down,
 				}
-				memberMap[baseUsername] = memberInfo
+				memberMap[groupKey] = memberInfo
 			}
 		}
 	}
@@ -117,8 +122,8 @@ func (s *XrayService) GetAllMembersWithInfo(ctx context.Context, sortType models
 		}
 
 		for _, client := range settings.Clients {
-			baseUsername := helpers.ExtractBaseUsername(client.Email)
-			if memberInfo, exists := memberMap[baseUsername]; exists {
+			groupKey := helpers.UserGroupKey(client.Email, emailToSubID)
+			if memberInfo, exists := memberMap[groupKey]; exists {
 				// Обновляем время истечения из настроек, если оно больше
 				if client.ExpiryTime > memberInfo.ExpiryTime {
 					memberInfo.ExpiryTime = client.ExpiryTime
