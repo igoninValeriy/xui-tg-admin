@@ -99,6 +99,16 @@ func (h *BaseHandler) sendQRCode(c telebot.Context, url string) error {
 	return err
 }
 
+// sendPhotoBytes sends a raw image (e.g. a rendered PNG) as a photo.
+func (h *BaseHandler) sendPhotoBytes(c telebot.Context, img []byte) error {
+	photo := &telebot.Photo{File: telebot.FromReader(bytes.NewReader(img))}
+	_, err := c.Bot().Send(c.Recipient(), photo)
+	if err != nil {
+		h.logger.Errorf("Failed to send photo: %v", err)
+	}
+	return err
+}
+
 // createMainKeyboard creates the main keyboard for the given access type
 func (h *BaseHandler) createMainKeyboard(accessType permissions.AccessType) *telebot.ReplyMarkup {
 	markup := &telebot.ReplyMarkup{

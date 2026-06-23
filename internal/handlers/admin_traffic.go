@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	telebot "gopkg.in/telebot.v3"
 
@@ -11,6 +12,7 @@ import (
 	"xui-tg-admin/internal/helpers"
 	"xui-tg-admin/internal/models"
 	"xui-tg-admin/internal/permissions"
+	"xui-tg-admin/internal/render"
 )
 
 // handleGetOnlineMembers handles the Online Members command
@@ -127,9 +129,17 @@ func (h *AdminHandler) handleGetDetailedUsersInfo(ctx context.Context, c telebot
 		onlineUsers = []string{}
 	}
 
-	// Format compact traffic report
-	message := helpers.FormatCompactTrafficReport(inbounds, onlineUsers)
+	// Render the visual report and send it as a photo. On any failure we still
+	// send the text table below, so the admin is never left empty-handed.
+	report := helpers.AggregateTraffic(inbounds, onlineUsers)
+	if img, rerr := render.TrafficReport(report, time.Now()); rerr != nil {
+		h.logger.Errorf("Failed to render traffic report image: %v", rerr)
+	} else if serr := h.sendPhotoBytes(c, img); serr != nil {
+		h.logger.Errorf("Failed to send traffic report image: %v", serr)
+	}
 
+	// Text table alongside the image (also carries the main keyboard).
+	message := helpers.FormatCompactTrafficReport(inbounds, onlineUsers)
 	return h.sendTextMessage(c, message, h.createMainKeyboard(permissions.Admin))
 }
 
