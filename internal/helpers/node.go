@@ -15,7 +15,7 @@ import (
 // screen never invents a value: a missing answer is shown as missing.
 const noData = "no data"
 
-// ansiPattern matches the CSI escape sequences a coloured CLI tool emits.
+// ansiPattern matches the CSI escape sequences a colored CLI tool emits.
 var ansiPattern = regexp.MustCompile(`\x1b\[[0-9;?]*[ -/]*[@-~]`)
 
 // StripANSI removes ANSI escape sequences from command output so it can be put
