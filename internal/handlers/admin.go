@@ -9,6 +9,7 @@ import (
 
 	"xui-tg-admin/internal/commands"
 	"xui-tg-admin/internal/config"
+	"xui-tg-admin/internal/helpers"
 	"xui-tg-admin/internal/models"
 	"xui-tg-admin/internal/permissions"
 	"xui-tg-admin/internal/services"
@@ -26,10 +27,11 @@ func NewAdminHandler(
 	xrayService *services.XrayService,
 	stateService *services.UserStateService,
 	qrService *services.QRService,
+	nodeService *services.NodeService,
 	config *config.Config,
 	logger *logrus.Logger,
 ) *AdminHandler {
-	baseHandler := NewBaseHandler(xrayService, stateService, qrService, config, logger)
+	baseHandler := NewBaseHandler(xrayService, stateService, qrService, nodeService, config, logger)
 
 	handler := &AdminHandler{
 		BaseHandler: baseHandler,
@@ -46,6 +48,13 @@ func (h *AdminHandler) CanHandle(accessType permissions.AccessType) bool {
 
 // Handle handles a message from Telegram
 func (h *AdminHandler) Handle(ctx context.Context, c telebot.Context) error {
+	// Inline-button presses carry their own command and must not be routed
+	// through the conversation state, whose text-based dispatch would misread
+	// the message the button is attached to.
+	if c.Callback() != nil {
+		return h.handleCallback(ctx, c)
+	}
+
 	// Get user ID
 	userID := c.Sender().ID
 
@@ -88,6 +97,8 @@ func (h *AdminHandler) initializeCommands() {
 		commands.EditMember:        h.handleEditMember,
 		commands.DeleteMember:      h.handleDeleteMember,
 		commands.OnlineMembers:     h.handleGetOnlineMembers,
+		commands.NodeStatus:        h.handleNodeStatus,
+		commands.Subscriptions:     h.handleSubscriptions,
 		commands.DetailedUsage:     h.handleGetDetailedUsersInfo,
 		commands.ResetNetworkUsage: h.handleResetUsersNetworkUsage,
 		commands.ReturnToMainMenu:  h.handleStart,
@@ -109,6 +120,8 @@ func (h *AdminHandler) getButtonCommand(text string) string {
 		return commands.Cancel
 	case "🔗 " + commands.ViewConfig:
 		return commands.ViewConfig
+	case "📱 " + commands.SubscriptionQR:
+		return commands.SubscriptionQR
 	case "🔄 " + commands.ResetTraffic:
 		return commands.ResetTraffic
 	case "🗑️ " + commands.Delete:
@@ -123,6 +136,19 @@ func (h *AdminHandler) getButtonCommand(text string) string {
 	}
 
 	return text
+}
+
+// handleCallback routes an inline-button press by its callback data.
+func (h *AdminHandler) handleCallback(ctx context.Context, c telebot.Context) error {
+	command := helpers.CallbackCommand(c.Callback().Data)
+
+	switch command {
+	case commands.CallbackNodeStatusRefresh:
+		return h.handleNodeStatusRefresh(ctx, c)
+	default:
+		h.logger.Warnf("Unknown callback: %s", command)
+		return c.Respond(&telebot.CallbackResponse{Text: "Unknown action"})
+	}
 }
 
 // handleDefaultState handles the default state

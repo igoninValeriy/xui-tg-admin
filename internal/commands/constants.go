@@ -14,6 +14,8 @@ const (
 	EditMember        = "Edit Member"
 	DeleteMember      = "Delete Member"
 	OnlineMembers     = "Online Members"
+	NodeStatus        = "Node Status"
+	Subscriptions     = "Subscriptions"
 	DetailedUsage     = "Detailed Usage"
 	ResetNetworkUsage = "Reset Network Usage"
 
@@ -22,13 +24,20 @@ const (
 	UsagePhoto = "Usage Photo"
 
 	// Member action commands
-	ViewConfig   = "View Config"
-	ResetTraffic = "Reset Traffic"
-	Delete       = "Delete"
+	ViewConfig     = "View Config"
+	SubscriptionQR = "Subscription QR"
+	ResetTraffic   = "Reset Traffic"
+	Delete         = "Delete"
 
 	// Confirmation commands
 	Confirm = "Confirm"
 
 	// Duration options
 	Infinite = "Infinite"
+)
+
+// Callback data uniques for inline buttons.
+const (
+	// CallbackNodeStatusRefresh redraws the node status message in place.
+	CallbackNodeStatusRefresh = "node_status_refresh"
 )

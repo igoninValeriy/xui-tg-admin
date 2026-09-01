@@ -17,6 +17,7 @@ type BaseHandler struct {
 	xrayService  *services.XrayService
 	stateService *services.UserStateService
 	qrService    *services.QRService
+	nodeService  *services.NodeService
 	config       *config.Config
 	logger       *logrus.Logger
 }
@@ -26,6 +27,7 @@ func NewBaseHandler(
 	xrayService *services.XrayService,
 	stateService *services.UserStateService,
 	qrService *services.QRService,
+	nodeService *services.NodeService,
 	config *config.Config,
 	logger *logrus.Logger,
 ) BaseHandler {
@@ -33,6 +35,7 @@ func NewBaseHandler(
 		xrayService:  xrayService,
 		stateService: stateService,
 		qrService:    qrService,
+		nodeService:  nodeService,
 		config:       config,
 		logger:       logger,
 	}
@@ -99,6 +102,31 @@ func (h *BaseHandler) sendQRCode(c telebot.Context, url string) error {
 	return err
 }
 
+// sendQRCodeWithCaption sends a QR code for the given URL with an HTML caption
+// and an optional reply keyboard.
+func (h *BaseHandler) sendQRCodeWithCaption(c telebot.Context, url, caption string, markup *telebot.ReplyMarkup) error {
+	qrBytes, err := h.qrService.GenerateQR(url)
+	if err != nil {
+		h.logger.Errorf("Failed to generate QR code: %v", err)
+		return err
+	}
+
+	photo := &telebot.Photo{
+		File:    telebot.FromReader(bytes.NewReader(qrBytes)),
+		Caption: caption,
+	}
+
+	opts := &telebot.SendOptions{ParseMode: telebot.ModeHTML}
+	if markup != nil {
+		opts.ReplyMarkup = markup
+	}
+
+	if _, err = c.Bot().Send(c.Recipient(), photo, opts); err != nil {
+		h.logger.Errorf("Failed to send QR code: %v", err)
+	}
+	return err
+}
+
 // sendPhotoBytes sends a raw image (e.g. a rendered PNG) as a photo, optionally
 // with a reply keyboard.
 func (h *BaseHandler) sendPhotoBytes(c telebot.Context, img []byte, markup *telebot.ReplyMarkup) error {
@@ -134,6 +162,10 @@ func (h *BaseHandler) createMainKeyboard(accessType permissions.AccessType) *tel
 				telebot.Btn{Text: "📈 " + commands.DetailedUsage},
 			},
 			{
+				telebot.Btn{Text: "🖥 " + commands.NodeStatus},
+				telebot.Btn{Text: "📡 " + commands.Subscriptions},
+			},
+			{
 				telebot.Btn{Text: "🔄 " + commands.ResetNetworkUsage},
 			},
 		}
@@ -159,6 +191,15 @@ func (h *BaseHandler) createUsageReportKeyboard() *telebot.ReplyMarkup {
 		},
 	)
 
+	return markup
+}
+
+// createNodeRefreshKeyboard creates the inline keyboard attached to the node
+// status message. Its button redraws that same message instead of sending a new
+// one, so the screen stays in one place in the chat.
+func (h *BaseHandler) createNodeRefreshKeyboard() *telebot.ReplyMarkup {
+	markup := &telebot.ReplyMarkup{}
+	markup.Inline(markup.Row(markup.Data("🔄 Refresh", commands.CallbackNodeStatusRefresh)))
 	return markup
 }
 

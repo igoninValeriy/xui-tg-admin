@@ -6,10 +6,12 @@ services:
     environment:
       - TG_TOKEN=1234567890:YOUR_BOT_TOKEN_FROM_BOTFATHER
       - TG_ADMIN_IDS=123456789,987654321
+      - XRAY_API_URL=http://localhost:2053/secretpath
       - XRAY_USER=admin
       - XRAY_PASSWORD=your_xui_panel_password
-      - XRAY_API_URL=http://localhost:54321
-      - XRAY_SUB_URL_PREFIX=http://YOUR_SERVER_IP:54321/sub
+      # Optional: replaces the username/password login when set
+      # - XRAY_API_TOKEN=
+      - XRAY_SUB_URL_PREFIX=https://sub.example.com
       - LOG_LEVEL=error
     volumes:
       - ./data:/root/data

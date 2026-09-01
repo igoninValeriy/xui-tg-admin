@@ -23,6 +23,7 @@ func Load() (*Config, error) {
 		"TG_ADMIN_IDS",
 		"XRAY_USER",
 		"XRAY_PASSWORD",
+		"XRAY_API_TOKEN",
 		"XRAY_API_URL",
 		"XRAY_SUB_URL_PREFIX",
 	}
@@ -55,21 +56,24 @@ func Load() (*Config, error) {
 	}
 
 	// Parse server configuration
-	user := v.GetString("XRAY_USER")
-	password := v.GetString("XRAY_PASSWORD")
-	apiURL := v.GetString("XRAY_API_URL")
-	subURLPrefix := v.GetString("XRAY_SUB_URL_PREFIX")
+	user := strings.TrimSpace(v.GetString("XRAY_USER"))
+	password := strings.TrimSpace(v.GetString("XRAY_PASSWORD"))
+	apiToken := strings.TrimSpace(v.GetString("XRAY_API_TOKEN"))
+	apiURL := strings.TrimSpace(v.GetString("XRAY_API_URL"))
+	subURLPrefix := strings.TrimSpace(v.GetString("XRAY_SUB_URL_PREFIX"))
 
-	if user == "" || password == "" || apiURL == "" {
+	// Either an API token or a username/password pair authenticates the panel.
+	if apiURL == "" || (apiToken == "" && (user == "" || password == "")) {
 		return nil, errors.New("missing required server configuration")
 	}
 
 	// Create server configuration
 	cfg.Server = ServerConfig{
-		User:         strings.TrimSpace(user),
-		Password:     strings.TrimSpace(password),
-		APIURL:       strings.TrimSpace(apiURL),
-		SubURLPrefix: strings.TrimSpace(subURLPrefix),
+		User:         user,
+		Password:     password,
+		APIToken:     apiToken,
+		APIURL:       apiURL,
+		SubURLPrefix: subURLPrefix,
 	}
 
 	// Validate configuration
@@ -91,14 +95,19 @@ func validateConfig(cfg *Config) error {
 	}
 
 	// Validate server configuration
-	if cfg.Server.User == "" {
-		return errors.New("server user is required")
-	}
-	if cfg.Server.Password == "" {
-		return errors.New("server password is required")
-	}
 	if cfg.Server.APIURL == "" {
-		return errors.New("server API URL is required")
+		return errors.New("XRAY_API_URL is required")
+	}
+	if cfg.Server.APIToken == "" {
+		if cfg.Server.User == "" {
+			return errors.New("XRAY_USER is required unless XRAY_API_TOKEN is set")
+		}
+		if cfg.Server.Password == "" {
+			return errors.New("XRAY_PASSWORD is required unless XRAY_API_TOKEN is set")
+		}
+	}
+	if cfg.Server.SubURLPrefix == "" {
+		return errors.New("XRAY_SUB_URL_PREFIX is required")
 	}
 
 	return nil

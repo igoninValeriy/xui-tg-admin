@@ -30,12 +30,13 @@ func main() {
 	stateService := services.NewUserStateService(logger)
 	xrayService := services.NewXrayService(cfg, logger)
 	qrService := services.NewQRService(logger)
+	nodeService := services.NewNodeService(logger)
 
 	// Setup permission controller
 	permController := permissions.NewController(cfg.Telegram.AdminIDs, logger)
 
 	// Initialize bot
-	bot, err := telegrambot.NewBot(cfg, stateService, xrayService, qrService, permController, logger)
+	bot, err := telegrambot.NewBot(cfg, stateService, xrayService, qrService, nodeService, permController, logger)
 	if err != nil {
 		logger.Fatal("Failed to create bot:", err)
 	}

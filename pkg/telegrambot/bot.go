@@ -35,6 +35,7 @@ func NewBot(
 	stateService *services.UserStateService,
 	xrayService *services.XrayService,
 	qrService *services.QRService,
+	nodeService *services.NodeService,
 	permCtrl *permissions.PermissionController,
 	logger *logrus.Logger,
 ) (*Bot, error) {
@@ -57,7 +58,7 @@ func NewBot(
 	}
 
 	// Create handler factory
-	factory := handlers.NewHandlerFactory(xrayService, stateService, qrService, cfg, logger)
+	factory := handlers.NewHandlerFactory(xrayService, stateService, qrService, nodeService, cfg, logger)
 
 	// Create bot
 	bot := &Bot{

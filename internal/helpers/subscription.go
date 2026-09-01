@@ -8,10 +8,17 @@ import (
 	"xui-tg-admin/internal/constants"
 )
 
-// FormatSubscriptionInfo formats subscription information for a single user
-func FormatSubscriptionInfo(baseUsername string, durationStr string, expiryTime int64, createdEmails []string, commonSubId string, addErrors []string, subURLPrefix string) string {
+// FormatSubscriptionInfo renders the summary shown after a user is created:
+// its validity, the panel's ready-made share links and the subscription URL.
+func FormatSubscriptionInfo(
+	baseUsername string,
+	durationStr string,
+	expiryTime int64,
+	subURL string,
+	links []string,
+) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Client added successfully!\n\nBase username: %s\n", baseUsername))
+	sb.WriteString(fmt.Sprintf("Client added successfully!\n\nUsername: %s\n", baseUsername))
 
 	if expiryTime == 0 {
 		sb.WriteString("Duration: ∞ (infinite)\n")
@@ -22,19 +29,31 @@ func FormatSubscriptionInfo(baseUsername string, durationStr string, expiryTime 
 	}
 
 	sb.WriteString("Traffic limit: Unlimited\n")
-	sb.WriteString("\nCreated accounts:\n")
-	for _, email := range createdEmails {
-		sb.WriteString(fmt.Sprintf("\n- %s", email))
+
+	if len(links) > 0 {
+		sb.WriteString("\nConfiguration links:\n")
+		for _, link := range links {
+			sb.WriteString(fmt.Sprintf("\n%s\n", link))
+		}
+	} else {
+		sb.WriteString("\nNo configuration link was returned by the panel.\n")
 	}
 
-	if len(createdEmails) > 0 {
-		subURL := fmt.Sprintf("%s%s?name=%s", subURLPrefix, commonSubId, commonSubId)
-		sb.WriteString(fmt.Sprintf("\n\nLink to connect: %s", subURL))
-	}
-
-	if len(addErrors) > 0 {
-		sb.WriteString(fmt.Sprintf("\n\nWarning: Failed to add to some inbounds:\n%s\n", strings.Join(addErrors, "\n")))
+	if subURL != "" {
+		sb.WriteString(fmt.Sprintf("\nSubscription URL: %s\n", subURL))
+		sb.WriteString("\nNote: the subscription is served by the external subscription front end, " +
+			"so the URL starts working only after that front end has picked the new client up.\n")
 	}
 
 	return sb.String()
+}
+
+// PreferredQRTarget picks what the QR code should encode: the first share link
+// if the panel returned one, otherwise the subscription URL. A share link works
+// immediately, while a subscription URL depends on the front end being refreshed.
+func PreferredQRTarget(links []string, subURL string) string {
+	if len(links) > 0 {
+		return links[0]
+	}
+	return subURL
 }

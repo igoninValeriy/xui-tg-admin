@@ -2,10 +2,8 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
 	telebot "gopkg.in/telebot.v3"
 
@@ -128,8 +126,8 @@ func (h *AdminHandler) processDuration(ctx context.Context, c telebot.Context) e
 
 	baseUsername := *userState.Payload
 
-	// Get enabled inbounds
-	enabledInbounds, err := h.getEnabledInbounds(ctx)
+	// Get the inbounds the new client will be attached to
+	inboundIDs, err := h.xrayService.GetEnabledInboundIDs(ctx)
 	if err != nil {
 		h.logger.Errorf("Failed to get enabled inbounds: %v", err)
 		return h.sendTextMessage(c, "❌ <b>Server Configuration Error</b>\n\nNo enabled inbound connections found. Please check your server configuration or contact the administrator.", h.createReturnKeyboard())
@@ -143,31 +141,31 @@ func (h *AdminHandler) processDuration(ctx context.Context, c telebot.Context) e
 
 	// Create client creation parameters
 	params := ClientCreationParams{
-		BaseUsername:    baseUsername,
-		DurationStr:     durationStr,
-		ExpiryTime:      expiryTime,
-		CommonSubId:     models.GenerateSubID(),
-		BaseFingerprint: fmt.Sprintf("%x", time.Now().UnixNano()),
-		SenderID:        c.Sender().ID,
+		BaseUsername: baseUsername,
+		DurationStr:  durationStr,
+		ExpiryTime:   expiryTime,
+		SubID:        models.GenerateSubID(),
+		SenderID:     c.Sender().ID,
 	}
 
 	// Send loading message
-	loadingMsg, _ := h.sendTextMessageWithReturn(c, "⏳ <b>Creating User...</b>\n\nPlease wait while we set up the new user configuration across all servers.", nil)
+	loadingMsg, _ := h.sendTextMessageWithReturn(c, "⏳ <b>Creating User...</b>\n\nPlease wait while we set up the new user configuration.", nil)
 
-	// Create clients for all enabled inbounds
-	createdEmails, addErrors, addedToAny := h.createClientsForAllInbounds(ctx, params, enabledInbounds)
+	// One client, attached to every enabled inbound in a single call
+	addErr := h.createClient(ctx, params, inboundIDs)
 
 	// Delete loading message
 	if loadingMsg != nil {
 		c.Bot().Delete(loadingMsg)
 	}
 
-	if !addedToAny {
-		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>User Creation Failed</b>\n\nCouldn't create user '%s' in any server configuration.\n\n<b>Errors:</b>\n%s\n\nPlease check server configuration or try again later.", baseUsername, strings.Join(addErrors, "\n")), h.createReturnKeyboard())
+	if addErr != nil {
+		h.logger.Errorf("Failed to create client %s: %v", baseUsername, addErr)
+		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>User Creation Failed</b>\n\nCouldn't create user '%s'.\n\n<b>Error:</b> %v\n\nPlease check the server configuration or try again later.", baseUsername, addErr), h.createReturnKeyboard())
 	}
 
 	// Send subscription information and QR code
-	return h.sendSubscriptionInfo(c, params, createdEmails, addErrors)
+	return h.sendSubscriptionInfo(ctx, c, params)
 }
 
 // processSelectUser processes the user selection
@@ -231,6 +229,8 @@ func (h *AdminHandler) processMemberAction(ctx context.Context, c telebot.Contex
 	switch command {
 	case commands.ViewConfig:
 		return h.handleViewConfig(ctx, c, username)
+	case commands.SubscriptionQR:
+		return h.handleSubscriptionQR(ctx, c, username)
 	case commands.ResetTraffic:
 		return h.handleResetTraffic(ctx, c, username)
 	case commands.Delete:
@@ -249,6 +249,7 @@ func (h *AdminHandler) createUserActionKeyboard() *telebot.ReplyMarkup {
 	markup.Reply(
 		telebot.Row{
 			telebot.Btn{Text: "🔗 " + commands.ViewConfig},
+			telebot.Btn{Text: "📱 " + commands.SubscriptionQR},
 		},
 		telebot.Row{
 			telebot.Btn{Text: "🔄 " + commands.ResetTraffic},
@@ -262,57 +263,59 @@ func (h *AdminHandler) createUserActionKeyboard() *telebot.ReplyMarkup {
 	return markup
 }
 
-// handleViewConfig handles the View Config action
+// handleViewConfig handles the View Config action. Both the share links and the
+// subscription ID come from the panel, so nothing is reconstructed by hand.
 func (h *AdminHandler) handleViewConfig(ctx context.Context, c telebot.Context, username string) error {
 	h.logger.Infof("Starting view config for user: %s", username)
 
-	// Get all inbounds
-	inbounds, err := h.xrayService.GetInbounds(ctx)
+	clients, err := h.xrayService.FindMemberClients(ctx, username)
 	if err != nil {
-		h.logger.Errorf("Failed to get inbounds: %v", err)
-		return h.sendTextMessage(c, fmt.Sprintf("Failed to get inbounds: %v", err), h.createUserActionKeyboard())
+		h.logger.Errorf("Failed to look up client %s: %v", username, err)
+		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>Connection Error</b>\n\nCouldn't read the client list: %v", err), h.createUserActionKeyboard())
 	}
-
-	// Find first client with the base username to get SubID
-	var foundClientSubID string
-
-	for _, inbound := range inbounds {
-		// Parse inbound settings to get client details
-		var settings models.InboundSettings
-		if err := json.Unmarshal([]byte(inbound.Settings), &settings); err != nil {
-			h.logger.Errorf("Failed to parse settings for inbound %d: %v", inbound.ID, err)
-			continue
-		}
-
-		// Find client in settings
-		for _, client := range settings.Clients {
-			// Check if client email matches the base username using helper function
-			if helpers.IsEmailMatchingBaseUsername(client.Email, username) {
-				h.logger.Infof("Found matching client: %s in inbound %d", client.Email, inbound.ID)
-				foundClientSubID = client.SubID
-				break
-			}
-		}
-		if foundClientSubID != "" {
-			break
-		}
-	}
-
-	if foundClientSubID == "" {
+	if len(clients) == 0 {
 		return h.sendTextMessage(c, fmt.Sprintf("❌ <b>User Not Found</b>\n\nNo configuration found for user '%s'. The user may have been deleted or never existed.", username), h.createUserActionKeyboard())
 	}
 
-	// Get subscription URL using SubID (same format as when adding user)
-	subURL := fmt.Sprintf("%s%s?name=%s", h.config.Server.SubURLPrefix, foundClientSubID, foundClientSubID)
+	var links []string
+	subID := ""
+	for _, record := range clients {
+		if subID == "" {
+			subID = record.SubID
+		}
+		clientLinks, lerr := h.xrayService.GetClientLinks(ctx, record.Email)
+		if lerr != nil {
+			h.logger.Errorf("Failed to get links for %s: %v", record.Email, lerr)
+			continue
+		}
+		links = append(links, clientLinks...)
+	}
 
-	// Send subscription URL with user action keyboard (stays in same state)
-	err = h.sendTextMessage(c, fmt.Sprintf("🔗 <b>Configuration for %s</b>\n\n📋 <b>Subscription URL:</b>\n<code>%s</code>\n\n<i>Copy this link to your VPN client or scan the QR code below</i>", username, subURL), h.createUserActionKeyboard())
-	if err != nil {
+	subURL := h.xrayService.SubscriptionURL(subID)
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🔗 <b>Configuration for %s</b>\n", username))
+	if len(links) > 0 {
+		sb.WriteString("\n📋 <b>Configuration links:</b>\n")
+		for _, link := range links {
+			sb.WriteString(fmt.Sprintf("<code>%s</code>\n", link))
+		}
+	} else {
+		sb.WriteString("\n⚠️ The panel returned no configuration link for this user.\n")
+	}
+	if subURL != "" {
+		sb.WriteString(fmt.Sprintf("\n📡 <b>Subscription URL:</b>\n<code>%s</code>\n", subURL))
+	}
+
+	if err := h.sendTextMessage(c, sb.String(), h.createUserActionKeyboard()); err != nil {
 		return err
 	}
 
-	// Send QR code
-	return h.sendQRCode(c, subURL)
+	qrTarget := helpers.PreferredQRTarget(links, subURL)
+	if qrTarget == "" {
+		return nil
+	}
+	return h.sendQRCode(c, qrTarget)
 }
 
 // handleConfirmDelete handles the Delete action
@@ -436,6 +439,8 @@ func (h *AdminHandler) formatMemberButtonText(member models.MemberInfo, sortType
 	switch sortType {
 	case models.SortByCreationOrder:
 		return baseText // По дате добавления показываем только имя
+	case models.SortByLastOnline:
+		return fmt.Sprintf("%s (%s)", baseText, member.LastSeenStatus())
 	case models.SortByExpiryDate:
 		return fmt.Sprintf("%s (%s)", baseText, member.GetExpiryStatus())
 	case models.SortByTrafficTotal:
