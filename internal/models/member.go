@@ -15,19 +15,43 @@ const (
 	SortByTrafficTotal                  // По общему трафику
 	SortByStatus                        // По статусу (активные первые)
 	SortByName                          // По имени (алфавитный)
+	SortByLastOnline                    // По времени последнего подключения (свежие первые)
 )
 
 // MemberInfo содержит расширенную информацию о пользователе для сортировки и фильтрации
 type MemberInfo struct {
 	BaseUsername string   // Базовое имя пользователя (без постфикса)
 	FullEmails   []string // Все email'ы пользователя во всех inbound'ах
+	SubID        string   // Идентификатор подписки (общий для всех клиентов юзера)
 	ID           int      // ID для сортировки по порядку создания
 	Enable       bool     // Активен ли пользователь
 	ExpiryTime   int64    // Время истечения (миллисекунды)
 	TotalUp      int64    // Общий загруженный трафик
 	TotalDown    int64    // Общий скачанный трафик
 	TotalTraffic int64    // Общий трафик (Up + Down)
+	LastOnline   int64    // Последнее подключение (миллисекунды), 0 — не подключался ни разу
 	IsExpired    bool     // Истек ли срок действия
+}
+
+// LastSeenStatus возвращает читаемое время последнего подключения. Панель 3.7.0
+// отдаёт его в /panel/api/clients/lastOnline и в traffic.lastOnline; ноль
+// означает, что клиент не подключался ни разу.
+func (m *MemberInfo) LastSeenStatus() string {
+	if m.LastOnline == 0 {
+		return "никогда"
+	}
+
+	elapsed := time.Since(time.UnixMilli(m.LastOnline))
+	switch {
+	case elapsed < time.Minute:
+		return "только что"
+	case elapsed < time.Hour:
+		return fmt.Sprintf("%d мин. назад", int(elapsed.Minutes()))
+	case elapsed < 24*time.Hour:
+		return fmt.Sprintf("%d ч. назад", int(elapsed.Hours()))
+	default:
+		return fmt.Sprintf("%d дн. назад", int(elapsed.Hours()/24))
+	}
 }
 
 // IsExpiredMember проверяет, истек ли срок действия пользователя
@@ -88,6 +112,12 @@ func SortMembers(members []MemberInfo, sortType SortType) {
 			return members[i].BaseUsername < members[j].BaseUsername
 		case SortByName:
 			return members[i].BaseUsername < members[j].BaseUsername
+		case SortByLastOnline:
+			// Никогда не подключавшиеся уходят в конец списка
+			if members[i].LastOnline == members[j].LastOnline {
+				return members[i].BaseUsername < members[j].BaseUsername
+			}
+			return members[i].LastOnline > members[j].LastOnline
 		default:
 			return members[i].ID < members[j].ID
 		}

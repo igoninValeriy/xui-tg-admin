@@ -22,6 +22,7 @@ type HandlerFactory struct {
 	xrayService  *services.XrayService
 	stateService *services.UserStateService
 	qrService    *services.QRService
+	nodeService  *services.NodeService
 	config       *config.Config
 	logger       *logrus.Logger
 }
@@ -31,6 +32,7 @@ func NewHandlerFactory(
 	xrayService *services.XrayService,
 	stateService *services.UserStateService,
 	qrService *services.QRService,
+	nodeService *services.NodeService,
 	config *config.Config,
 	logger *logrus.Logger,
 ) *HandlerFactory {
@@ -38,6 +40,7 @@ func NewHandlerFactory(
 		xrayService:  xrayService,
 		stateService: stateService,
 		qrService:    qrService,
+		nodeService:  nodeService,
 		config:       config,
 		logger:       logger,
 	}
@@ -47,7 +50,7 @@ func NewHandlerFactory(
 func (f *HandlerFactory) CreateHandler(accessType permissions.AccessType) MessageHandler {
 	switch accessType {
 	case permissions.Admin:
-		return NewAdminHandler(f.xrayService, f.stateService, f.qrService, f.config, f.logger)
+		return NewAdminHandler(f.xrayService, f.stateService, f.qrService, f.nodeService, f.config, f.logger)
 	default:
 		f.logger.Warnf("Unknown access type: %d", accessType)
 		return nil

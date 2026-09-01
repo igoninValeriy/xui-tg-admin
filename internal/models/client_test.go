@@ -1,23 +1,18 @@
 package models
 
 import (
-	"strings"
+	"encoding/json"
+	"regexp"
 	"testing"
 )
+
+var hex32 = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 func TestGenerateSubID(t *testing.T) {
 	id := GenerateSubID()
 
-	if id == "" {
-		t.Fatal("GenerateSubID returned empty string")
-	}
-	if len(id) > 16 {
-		t.Errorf("GenerateSubID length = %d, want <= 16", len(id))
-	}
-	for _, ch := range []string{"=", "+", "/"} {
-		if strings.Contains(id, ch) {
-			t.Errorf("GenerateSubID %q contains forbidden char %q", id, ch)
-		}
+	if !hex32.MatchString(id) {
+		t.Errorf("GenerateSubID() = %q, want 32 lowercase hex characters", id)
 	}
 }
 
@@ -32,41 +27,58 @@ func TestGenerateSubIDUnique(t *testing.T) {
 	}
 }
 
-func TestClientToDictionary(t *testing.T) {
-	expiry := int64(123456)
-	flow := "xtls"
+// TestClientMarshalTgIDIsNumber pins the field that breaks the panel: 3x-ui
+// decodes tgId into an int64 and rejects a JSON string with
+// "cannot unmarshal string into Go struct field .tgId of type int64".
+func TestClientMarshalTgIDIsNumber(t *testing.T) {
 	c := Client{
-		ID:          "john-1",
-		Enable:      true,
-		Flow:        &flow,
-		Email:       "john-1",
-		TotalGB:     0,
-		LimitIP:     0,
-		ExpiryTime:  &expiry,
-		Fingerprint: "fp",
-		TgID:        "42",
-		SubID:       "sub",
+		Email:      "john",
+		Enable:     true,
+		ExpiryTime: 123456,
+		TgID:       42,
+		SubID:      "0123456789abcdef0123456789abcdef",
 	}
 
-	dict := c.ToDictionary()
-
-	if dict["email"] != "john-1" {
-		t.Errorf("email = %v, want john-1", dict["email"])
-	}
-	if dict["flow"] != "xtls" {
-		t.Errorf("flow = %v, want xtls", dict["flow"])
-	}
-	if dict["expiryTime"] != expiry {
-		t.Errorf("expiryTime = %v, want %d", dict["expiryTime"], expiry)
+	data, err := json.Marshal(c)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
 	}
 
-	// Optional fields must be omitted when nil
-	noOpt := Client{ID: "x", Email: "x"}
-	d2 := noOpt.ToDictionary()
-	if _, ok := d2["flow"]; ok {
-		t.Error("flow should be omitted when nil")
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
 	}
-	if _, ok := d2["expiryTime"]; ok {
-		t.Error("expiryTime should be omitted when nil")
+
+	if got := string(raw["tgId"]); got != "42" {
+		t.Errorf("tgId = %s, want the bare number 42", got)
+	}
+	if got := string(raw["expiryTime"]); got != "123456" {
+		t.Errorf("expiryTime = %s, want 123456", got)
+	}
+	if _, ok := raw["email"]; !ok {
+		t.Error("email must always be sent")
+	}
+	if _, ok := raw["totalGB"]; !ok {
+		t.Error("totalGB must always be sent, including the 0 that means unlimited")
+	}
+}
+
+// TestClientMarshalOmitsGeneratedSecrets checks that the fields the panel can
+// mint itself are left out when empty rather than sent as "".
+func TestClientMarshalOmitsGeneratedSecrets(t *testing.T) {
+	data, err := json.Marshal(Client{Email: "john", Enable: true})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	for _, field := range []string{"id", "subId", "flow", "comment"} {
+		if _, ok := raw[field]; ok {
+			t.Errorf("%q should be omitted when empty so the panel generates it", field)
+		}
 	}
 }
